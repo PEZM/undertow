@@ -1,0 +1,4 @@
+[
+  { "name": "You", "source": "lastfm", "user": "YOUR_LASTFM_USERNAME" },
+  { "name": "A friend", "source": "listenbrainz", "user": "YOUR_LISTENBRAINZ_USERNAME" }
+]

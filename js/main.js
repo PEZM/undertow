@@ -1,0 +1,363 @@
+import { CONFIG } from "../config.js";
+import { fetchListens, artistTags } from "./sources.js";
+import { Ocean } from "./ocean.js";
+import { Currents, artistHue, hsl, styleOf } from "./currents.js";
+import { makeDemo, demoTick, DEMO_TAGS } from "./demo.js";
+
+const glCanvas = document.getElementById("ocean");
+const overlay = document.getElementById("overlay");
+const ctx = overlay.getContext("2d");
+const statusEl = document.getElementById("status");
+const tip = document.getElementById("tip");
+
+let ocean;
+try {
+  ocean = new Ocean(glCanvas);
+} catch (e) {
+  statusEl.textContent = `${e.message}. Try a recent Chrome, Safari or Firefox.`;
+  throw e;
+}
+
+const currents = new Currents();
+currents.sharedMinutes = CONFIG.sharedMinutes;
+
+let people = [];   // everyone we were asked to show
+let shown = [];    // the ones whose listening loaded
+let demo = false;
+let updatedAt = null;
+let tags = [];     // now and then one particle lights up and names its artist
+let lastTagAt = -Infinity, tagGap = 5;
+let pointer = null;
+let exportRequested = false;
+const nowSec = () => Date.now() / 1000;
+
+// ?users=lb:alice,lfm:bob tries people out without editing participants.json
+async function loadParticipants() {
+  const q = new URLSearchParams(location.search);
+  if (q.has("demo")) return null;
+  if (q.get("users")) {
+    const sources = { lb: "listenbrainz", lfm: "lastfm" };
+    return q.get("users").split(",").map(s => {
+      const [src, user] = s.split(":");
+      return { name: user, source: sources[src] ?? src, user };
+    });
+  }
+  try {
+    const res = await fetch("participants.json", { cache: "no-store" });
+    const list = await res.json();
+    const real = list.filter(p => p.user && !p.user.startsWith("YOUR_"));
+    return real.length ? real : null;
+  } catch {
+    return null;
+  }
+}
+
+// A tag rides one particle in someone's current. Only now and then, so each one is a
+// small event; loved songs and two people meeting get to cut in a little sooner.
+function tag(state, artist, detail, hue, priority = false) {
+  const since = ocean.time - lastTagAt;
+  if (since < (priority ? Math.min(tagGap, 4) : tagGap) || tags.length >= 2) return;
+  const pr = ocean.project(state.x, state.y);
+  if (!pr || pr.sx < 60 || pr.sx > innerWidth - 60 || pr.sy < 110 || pr.sy > innerHeight - 40) return;
+  if (tags.some(t => t.artist === artist.toUpperCase())) return;
+  lastTagAt = ocean.time;
+  tagGap = 9 + Math.random() * 7;
+  tags.push({ state, artist: artist.toUpperCase(), detail, hue, born: ocean.time, angle: Math.random() * Math.PI * 2, radius: 0.06 + Math.random() * 0.08 });
+}
+
+function styleName(artist) {
+  return styleOf(currents.tagsFor(artist))?.name ?? null;
+}
+
+// A song starts: the current surges and a ring wave rolls out.
+function splash(person, listen) {
+  const s = currents.stateFor(person), hue = artistHue(listen.artist);
+  currents.surge(person);
+  ocean.ripple(s.x, s.y, hsl(hue, 0.9, 0.65), listen.loved ? 1.5 : 1.1);
+  const style = styleName(listen.artist);
+  const detail = [style, listen.loved ? "♥ loved" : "new track"].filter(Boolean).join(" · ");
+  tag(s, listen.artist, detail, hue, !!listen.loved);
+}
+
+function analyse() {
+  for (const bd of currents.analyse(shown, nowSec())) {
+    const a = currents.stateFor(bd.a), b = currents.stateFor(bd.b);
+    ocean.ripple((a.x + b.x) / 2, (a.y + b.y) / 2, hsl(bd.hue, 0.9, 0.7), 1.6);
+    tag({ get x() { return (a.x + b.x) / 2; }, get y() { return (a.y + b.y) / 2; }, spin: a.spin },
+      bd.artist, ["sync ×2", styleName(bd.artist)].filter(Boolean).join(" · "), bd.hue, true);
+  }
+  updateStatus();
+}
+setInterval(analyse, 2000);
+
+const listenKey = l => `${l.ts}|${l.artist}|${l.track}`;
+
+function announceNew(p, fresh) {
+  const known = new Set(p.listens.filter(l => !l.nowPlaying).map(listenKey));
+  const np = fresh.find(l => l.nowPlaying);
+  const npKey = np ? `${np.artist}|${np.track}` : null;
+  if (np && npKey !== p.npKey) splash(p, np);
+  else for (const l of fresh.filter(l => !l.nowPlaying && !known.has(listenKey(l))).slice(0, 2)) splash(p, l);
+  p.npKey = npKey;
+}
+
+async function refresh() {
+  const since = Math.floor(nowSec() - CONFIG.historyHours * 3600);
+  const results = await Promise.allSettled(people.map(p => fetchListens(p, since)));
+  results.forEach((r, i) => {
+    const p = people[i];
+    if (r.status === "rejected") { p.error = r.reason.message; return; }
+    if (p.loaded) announceNew(p, r.value);
+    else p.npKey = (n => n && `${n.artist}|${n.track}`)(r.value.find(l => l.nowPlaying));
+    p.listens = r.value;
+    p.loaded = true;
+    p.error = null;
+  });
+  updatedAt = new Date();
+  shown = people.filter(p => p.loaded);
+  analyse();
+}
+
+function updateStatus() {
+  const playing = shown.filter(p => p.listens.some(l => l.nowPlaying)).length;
+  const parts = [`${shown.length} listener${shown.length === 1 ? "" : "s"}`, `${playing} playing now`];
+  if (currents.bonds.length) parts.push(`${currents.bonds.length} in sync`);
+  if (demo) parts.push("demo data");
+  else if (updatedAt) parts.push(`updated ${updatedAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`);
+  statusEl.textContent = parts.join(" · ");
+  const failed = people.filter(p => p.error);
+  if (failed.length && !demo) {
+    const warn = document.createElement("span");
+    warn.className = "warn";
+    warn.textContent = ` · ${failed.length} couldn't load`;
+    warn.title = failed.map(p => `${p.name}: ${p.error}`).join("\n");
+    statusEl.append(warn);
+  }
+}
+
+function startDemo() {
+  demo = true;
+  currents.tagsFor = a => DEMO_TAGS[a] ?? null;
+  const count = Number(new URLSearchParams(location.search).get("listeners")) || 100;
+  people = shown = makeDemo(Math.max(2, Math.min(128, count)));
+  analyse();
+  // Roughly one song start every four minutes per active listener.
+  (function tick() {
+    setTimeout(() => {
+      const hit = demoTick(people);
+      if (hit) splash(hit.person, hit.listen);
+      tick();
+    }, (240000 / Math.max(4, people.length * 0.6)) * (0.5 + Math.random()));
+  })();
+}
+
+async function start() {
+  const list = await loadParticipants();
+  if (!list) return startDemo();
+  currents.tagsFor = artistTags;
+  people = list.map(p => ({ ...p, listens: [] }));
+  statusEl.textContent = `Gathering ${people.length} listeners…`;
+  await refresh();
+  if (!shown.length) return startDemo();
+  setInterval(refresh, CONFIG.pollSeconds * 1000);
+}
+
+const TAG_LIFE = 7;
+const MONO = '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace';
+
+function drawOverlay() {
+  const dpr = ocean.dpr, w = innerWidth, h = innerHeight;
+  if (overlay.width !== Math.round(w * dpr) || overlay.height !== Math.round(h * dpr)) {
+    overlay.width = Math.round(w * dpr);
+    overlay.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  tags = tags.filter(t => ocean.time - t.born < TAG_LIFE);
+  for (const t of tags) {
+    const age = ocean.time - t.born;
+    // The tagged particle circles in its current like any other.
+    const a = t.angle + age * 0.5 * (t.state.spin ?? 1);
+    const pr = ocean.project(t.state.x + Math.cos(a) * t.radius, t.state.y + Math.sin(a) * t.radius, 0.1 + age * 0.012);
+    if (!pr) continue;
+    const alpha = Math.min(1, (TAG_LIFE - age) / 1.2);
+    const { sx, sy } = pr;
+
+    // The particle: a bright point with a single ping when it lights up.
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = `hsl(${t.hue},90%,88%)`;
+    ctx.shadowColor = `hsl(${t.hue},95%,65%)`;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    if (age < 0.8) {
+      ctx.globalAlpha = alpha * (1 - age / 0.8);
+      ctx.strokeStyle = `hsl(${t.hue},90%,80%)`;
+      ctx.lineWidth = 0.75;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2 + age * 16, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // A hairline callout, typed out character by character.
+    const shown = Math.max(0, Math.floor((age - 0.3) * 30));
+    const line1 = t.artist.slice(0, shown), line2 = t.detail.toUpperCase().slice(0, Math.max(0, shown - t.artist.length));
+    ctx.font = `500 9.5px ${MONO}`;
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "1.2px";
+    const width = Math.max(ctx.measureText(t.artist).width, 40);
+    const dir = sx + 18 + width > w - 12 ? -1 : 1;
+    const ex = sx + dir * 14, ey = sy - 14, tx = dir > 0 ? ex + 3 : ex - 3 - width;
+    const grow = Math.min(1, age / 0.35);
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.strokeStyle = `hsl(${t.hue},60%,85%)`;
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(sx + dir * 3, sy - 3);
+    ctx.lineTo(sx + dir * (3 + 11 * grow), sy - 3 - 11 * grow);
+    if (grow === 1) ctx.lineTo(ex + dir * (width + 6) * Math.min(1, (age - 0.35) * 4), ey);
+    ctx.stroke();
+    ctx.globalAlpha = alpha * 0.95;
+    ctx.fillStyle = `hsl(${t.hue},70%,90%)`;
+    ctx.fillText(line1, tx, ey - 4);
+    ctx.font = `400 7.5px ${MONO}`;
+    ctx.globalAlpha = alpha * 0.55;
+    ctx.fillStyle = "rgb(225,232,245)";
+    ctx.fillText(line2, tx, ey + 9);
+  }
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+  ctx.globalAlpha = 1;
+}
+
+function ago(ts) {
+  const m = Math.round((nowSec() - ts) / 60);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  if (m < 60 * 24) return `${Math.round(m / 60)} h ago`;
+  return `${Math.round(m / 1440)} d ago`;
+}
+
+function nearest(mx, my) {
+  let best = null, bd = 70;
+  for (const p of shown) {
+    const s = currents.stateFor(p), pr = ocean.project(s.x, s.y);
+    const d = pr && Math.hypot(pr.sx - mx, pr.sy - my);
+    if (d != null && d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+
+function line(text, className) {
+  const el = document.createElement("div");
+  el.textContent = text;
+  if (className) el.className = className;
+  tip.append(el);
+}
+
+function showTip(e) {
+  const p = nearest(e.clientX, e.clientY);
+  pointer = p && { person: p };
+  if (!p) { tip.hidden = true; return; }
+  const s = currents.stateFor(p);
+  tip.replaceChildren();
+  const name = document.createElement("strong");
+  name.textContent = p.name;
+  tip.append(name);
+  const l = s.playing ?? s.last;
+  line(l ? `${l.artist}${l.track ? " — " + l.track : ""} · ${l.nowPlaying ? "playing now" : ago(l.ts)}` : "quiet lately");
+  if (s.palette.length > 1) line(`lately: ${s.palette.map(a => a.artist).join(", ")}`, "muted");
+  if (s.styles.length) line(`currents: ${s.styles.slice(0, 3).join(" / ")}${s.lovedTarget ? " · ♥ loved" : ""}`, "muted");
+  for (const bd of currents.bonds.filter(b => b.a === p || b.b === p)) {
+    line(`in sync with ${(bd.a === p ? bd.b : bd.a).name} on ${bd.artist}`, "shared");
+  }
+  const kin = shown.filter(q => q !== p).map(q => [q, currents.similarityOf(p, q)]).sort((a, b) => b[1] - a[1])[0];
+  if (kin && kin[1] > 0.15) line(`closest taste: ${kin[0].name} (${Math.round(kin[1] * 100)}%)`, "muted");
+  tip.hidden = false;
+  const x = Math.min(e.clientX + 16, innerWidth - tip.offsetWidth - 8);
+  const y = e.clientY + 20 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 14 : e.clientY + 20;
+  tip.style.transform = `translate(${x}px, ${y}px)`;
+}
+
+// Drag to orbit, scroll or pinch-zoom to move closer, tap the water to ripple it.
+let drag = null;
+overlay.addEventListener("pointerdown", e => {
+  drag = { x: e.clientX, y: e.clientY, yaw: ocean.view.yaw, el: ocean.view.el, moved: false };
+  overlay.setPointerCapture(e.pointerId);
+});
+overlay.addEventListener("pointermove", e => {
+  if (!drag) return showTip(e);
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 5) drag.moved = true;
+  if (!drag.moved) return;
+  tip.hidden = true;
+  ocean.view.yaw = drag.yaw - dx * 0.005;
+  ocean.view.el = Math.max(0.08, Math.min(1.2, drag.el + dy * 0.004));
+});
+overlay.addEventListener("pointerup", e => {
+  if (drag && !drag.moved) {
+    const hit = ocean.unproject(e.clientX, e.clientY);
+    if (hit) ocean.ripple(hit.x, hit.y, [0.85, 0.92, 1], 1.1);
+  }
+  drag = null;
+});
+overlay.addEventListener("pointerleave", () => { tip.hidden = true; pointer = null; });
+overlay.addEventListener("wheel", e => {
+  e.preventDefault();
+  ocean.view.dist = Math.max(1.2, Math.min(4.5, ocean.view.dist * (1 + e.deltaY * 0.001)));
+}, { passive: false });
+
+// The interface steps aside when nobody is touching it.
+let idleTimer;
+function wake() {
+  document.body.classList.remove("idle");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => document.body.classList.add("idle"), 4000);
+}
+addEventListener("pointermove", wake);
+addEventListener("keydown", wake);
+wake();
+
+document.getElementById("fullscreen").addEventListener("click", () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.();
+});
+document.getElementById("export").addEventListener("click", () => { exportRequested = true; });
+
+function saveFrame() {
+  const out = document.createElement("canvas");
+  out.width = glCanvas.width;
+  out.height = glCanvas.height;
+  const g = out.getContext("2d");
+  g.drawImage(glCanvas, 0, 0);
+  g.drawImage(overlay, 0, 0, out.width, out.height);
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+  out.toBlob(blob => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `undertow-${stamp}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+}
+
+const speed = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.25 : 1;
+const inView = (x, y) => ocean.project(x, y);
+for (let i = 0; i < 90; i++) ocean.frame(1 / 30); // let the currents settle before the first look
+let last = performance.now();
+requestAnimationFrame(function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000) * speed;
+  last = now;
+  const states = currents.step(shown, dt, ocean.time, inView);
+  ocean.setListeners(states.map(s => ({
+    x: s.x, y: s.y, energy: s.energy, spin: s.spin, rgb: s.rgb,
+    loved: s.loved, drift: s.drift, chop: s.chop, surge: s.surge,
+  })));
+  ocean.frame(dt);
+  drawOverlay();
+  if (exportRequested) { exportRequested = false; saveFrame(); }
+  requestAnimationFrame(loop);
+});
+
+start();
