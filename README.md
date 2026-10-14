@@ -16,6 +16,14 @@ the currents are driven by the music:
 - **Likes:** a loved track (Last.fm loves, ListenBrainz feedback) makes its patch of sea glow.
 - **In sync:** two people on the same artist within the last 12 minutes meet and orbit.
 
+**Fur** (the button top right, or `?view=fur`) grows the same data as an endless, extremely
+colourful pelt of several hundred thousand hairs running out to the horizon. Gusts roll through
+it in long waves. Each listener combs a whorl into it like a cowlick, and their listening energy makes
+the fur stand up in a tuft. Calm styles lay it long and sleek, energetic ones make it short and
+frizzy. A song start sends a wave through the hair, and a loved track lights the tips. Every current dyes
+the fur it passes in its artist's colour, and the trail slowly grows back out to the pelt's own
+drifting rainbow.
+
 The same artist is the same colour for everyone. Now and then a single particle lights up
 and names its artist in a tiny tag.
 
@@ -35,9 +43,11 @@ URL options:
 
 - `?demo`: force demo data
 - `?listeners=40`: how many demo listeners (default 100, up to 128)
+- `?view=fur`: open on the fur
+- `?hairs=600000`: how many strands to grow (default 420,000, 150,000 on phones)
 - `?users=lb:alice,lfm:bob`: try people without editing any file (`lb` = ListenBrainz, `lfm` = Last.fm)
 
-Drag to orbit, scroll to zoom, tap the water to ripple it. Hover a current to see whose it is, what they're
+Drag to orbit, scroll to zoom (closer in the fur), tap the water to ripple it. Hover a current to see whose it is, what they're
 playing and their closest taste match.
 **Fullscreen** plus a few idle seconds (the UI fades away) gives you exhibition mode. **Save PNG** exports the frame.
 
@@ -72,6 +82,7 @@ Only add people who have said yes. A username in this file makes their recent li
 | File | What it does |
 |---|---|
 | `js/ocean.js` | WebGL2 ocean: the listener field, particles, swell, ripples, trails |
+| `js/fur.js` | WebGL2 fur: spring-driven strands grown from the same listener field |
 | `js/currents.js` | Listeners as currents: styles, likes, surges, similarity, sync |
 | `js/sources.js` | Plays and likes from Last.fm / ListenBrainz, genres from Last.fm / MusicBrainz |
 | `js/demo.js` | Made-up listeners for when nobody is configured |

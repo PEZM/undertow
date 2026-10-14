@@ -1,6 +1,7 @@
 import { CONFIG } from "../config.js";
 import { fetchListens, artistTags } from "./sources.js";
 import { Ocean } from "./ocean.js";
+import { Fur } from "./fur.js";
 import { Currents, artistHue, hsl, styleOf } from "./currents.js";
 import { makeDemo, demoTick, DEMO_TAGS } from "./demo.js";
 
@@ -17,6 +18,30 @@ try {
   statusEl.textContent = `${e.message}. Try a recent Chrome, Safari or Firefox.`;
   throw e;
 }
+
+// Two ways to see the same field: the particle ocean, or an endless pelt of fur.
+// ?view=fur opens on the fur; ?hairs=600000 grows more (or fewer) strands.
+const viewBtn = document.getElementById("view");
+let fur = null;
+function setView(name) {
+  if (name === "fur") {
+    try {
+      fur ??= new Fur(ocean, Number(new URLSearchParams(location.search).get("hairs")) || 0);
+    } catch (e) {
+      console.error(e);
+      name = "ocean";
+    }
+  }
+  ocean.surface = name === "fur" ? fur : null;
+  viewBtn.textContent = name === "fur" ? "Ocean" : "Fur";
+  viewBtn.setAttribute("aria-pressed", String(name === "fur"));
+  const q = new URLSearchParams(location.search);
+  if (name === "fur") q.set("view", "fur");
+  else q.delete("view");
+  history.replaceState(null, "", q.size ? `?${q}` : location.pathname);
+}
+setView(new URLSearchParams(location.search).get("view") === "fur" ? "fur" : "ocean");
+viewBtn.addEventListener("click", () => setView(ocean.surface ? "ocean" : "fur"));
 
 const currents = new Currents();
 currents.sharedMinutes = CONFIG.sharedMinutes;
@@ -305,7 +330,8 @@ overlay.addEventListener("pointerup", e => {
 overlay.addEventListener("pointerleave", () => { tip.hidden = true; pointer = null; });
 overlay.addEventListener("wheel", e => {
   e.preventDefault();
-  ocean.view.dist = Math.max(1.2, Math.min(4.5, ocean.view.dist * (1 + e.deltaY * 0.001)));
+  // The fur rewards a closer look.
+  ocean.view.dist = Math.max(ocean.surface ? 0.6 : 1.2, Math.min(4.5, ocean.view.dist * (1 + e.deltaY * 0.001)));
 }, { passive: false });
 
 // The interface steps aside when nobody is touching it.

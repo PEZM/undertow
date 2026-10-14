@@ -12,12 +12,19 @@ const MAXR = 16;          // ripples alive at once
 const FIELD = 256;        // field texture resolution
 const OCEAN = [0.05, 0.13, 0.27];
 
-const COMMON = `
+export const COMMON = `
 precision highp float;
 precision highp int;
 uniform float uTime;
 uniform vec2 uBounds;
 vec2 fuv(vec2 p) { return p / uBounds * 0.5 + 0.5; }
+float swell(vec2 p, float t) {
+  return 0.085 * sin(dot(p, vec2(0.9, 0.45)) * 2.2 - t * 0.5)
+       + 0.050 * sin(dot(p, vec2(-0.35, 1.0)) * 3.9 - t * 0.7)
+       + 0.024 * sin(dot(p, vec2(0.7, -0.75)) * 7.3 - t * 1.1)
+       + 0.011 * sin(dot(p, vec2(-0.95, -0.2)) * 13.0 - t * 1.6)
+       + 0.005 * sin(dot(p, vec2(0.2, 0.98)) * 23.0 - t * 2.3);
+}
 `;
 
 const FIELD_FS = `#version 300 es
@@ -32,14 +39,6 @@ in vec2 vUv;
 layout(location = 0) out vec4 oFlow;   // velocity xy, height, spray
 layout(location = 1) out vec4 oPaint;  // pigment rgb, weight
 layout(location = 2) out vec4 oMood;   // chop, loved glow
-
-float swell(vec2 p, float t) {
-  return 0.085 * sin(dot(p, vec2(0.9, 0.45)) * 2.2 - t * 0.5)
-       + 0.050 * sin(dot(p, vec2(-0.35, 1.0)) * 3.9 - t * 0.7)
-       + 0.024 * sin(dot(p, vec2(0.7, -0.75)) * 7.3 - t * 1.1)
-       + 0.011 * sin(dot(p, vec2(-0.95, -0.2)) * 13.0 - t * 1.6)
-       + 0.005 * sin(dot(p, vec2(0.2, 0.98)) * 23.0 - t * 2.3);
-}
 
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uBounds;
@@ -93,26 +92,7 @@ void main() {
   oMood = vec4(mix(0.5, chop / max(chopW, 1e-4), clamp(chopW * 1.5, 0.0, 1.0)), glow, 0.0, 0.0);
 }`;
 
-const FULL_VS = `#version 300 es
-out vec2 vUv;
-void main() {
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p;
-  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const SIM_FS = `#version 300 es
-${COMMON}
-uniform sampler2D uPos;  // xy, seed, age
-uniform sampler2D uCol;  // pigment
-uniform sampler2D uFlow;
-uniform sampler2D uPaint;
-uniform sampler2D uMood;
-uniform float uDt;
-layout(location = 0) out vec4 oPos;
-layout(location = 1) out vec4 oCol;
-const vec3 OCEAN = vec3(${OCEAN.join(", ")});
-
+export const NOISE = `
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -164,7 +144,29 @@ vec2 curl(vec3 q) {
   float dx = snoise(q + vec3(e, 0.0, 0.0)) - snoise(q - vec3(e, 0.0, 0.0));
   return vec2(dy, -dx) / (2.0 * e);
 }
+`;
 
+export const FULL_VS = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const SIM_FS = `#version 300 es
+${COMMON}
+uniform sampler2D uPos;  // xy, seed, age
+uniform sampler2D uCol;  // pigment
+uniform sampler2D uFlow;
+uniform sampler2D uPaint;
+uniform sampler2D uMood;
+uniform float uDt;
+layout(location = 0) out vec4 oPos;
+layout(location = 1) out vec4 oCol;
+const vec3 OCEAN = vec3(${OCEAN.join(", ")});
+
+${NOISE}
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
 void main() {
@@ -294,7 +296,7 @@ function compile(gl, type, src) {
   return s;
 }
 
-function program(gl, vs, fs) {
+export function program(gl, vs, fs) {
   const p = gl.createProgram();
   gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vs));
   gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fs));
@@ -392,8 +394,9 @@ export class Ocean {
     this.dpr = Math.min(2, devicePixelRatio || 1);
     this.w = innerWidth;
     this.h = innerHeight;
-    this.canvas.width = Math.round(this.w * this.dpr);
-    this.canvas.height = Math.round(this.h * this.dpr);
+    // A hidden tab can report no size at all; an empty canvas can't hold a framebuffer.
+    this.canvas.width = Math.max(1, Math.round(this.w * this.dpr));
+    this.canvas.height = Math.max(1, Math.round(this.h * this.dpr));
     if (this.trail) { gl.deleteTexture(this.trail); gl.deleteFramebuffer(this.trailFb); }
     this.trail = this.texture(this.canvas.width, this.canvas.height, gl.RGBA16F, gl.HALF_FLOAT, null, gl.LINEAR);
     this.trailFb = this.framebuffer(this.trail);
@@ -553,6 +556,8 @@ export class Ocean {
     this.time += dt;
     this.camera();
     this.field();
+    // Another surface (the fur) can grow from the same field instead of the particles.
+    if (this.surface) return this.surface.frame(dt);
     this.simulate(dt);
     this.render(dt);
   }
