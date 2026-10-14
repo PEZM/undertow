@@ -128,7 +128,8 @@ export class Currents {
         const w = Math.pow(0.5, age / this.halfLife) + (l.nowPlaying ? 1.5 : 0);
         activity += w;
         const k = artistKey(l.artist);
-        (times.get(k) ?? times.set(k, []).get(k)).push(l.ts);
+        // Meeting on the same thing is a human moment: automated plays/edits don't count.
+        if (!l.bot) (times.get(k) ?? times.set(k, []).get(k)).push(l.ts);
         const a = artists.get(k) ?? artists.set(k, { artist: l.artist, w: 0 }).get(k);
         a.w += w;
         map.set("a:" + k, (map.get("a:" + k) ?? 0) + w);

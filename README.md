@@ -13,8 +13,10 @@ EventStreams feed: no key, no sign-up. Each language edition is a current:
 - **Families:** Romance, Slavic, Germanic, East Asian and the other language families each have a
   compass direction, so related languages drift together as one river. Bot edits pull toward
   their own direction and roughen the water.
-- **New articles and big edits** send a wave out; a new article makes its patch glow.
-- **The same article edited in two languages at once** (usually news) brings them together to orbit.
+- **New articles and big edits by people** send a wave out and name the article; a new article
+  makes its patch glow. Bots and scripted tools (flagged bots, bot-named accounts, "Bot:" or AWB
+  summaries) shape the water but never get a title.
+- **The same article edited by people in two languages at once** (usually news) brings them together to orbit.
 - The page replays the last five minutes on load, so it starts full. Editors' names are never shown.
 
 **Music** (`?feed=music`, or the button top right) uses people's Last.fm and ListenBrainz

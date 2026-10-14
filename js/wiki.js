@@ -7,8 +7,9 @@
 //   title with its own colour, the way each artist has one.
 // - Languages of one family flow in one direction, so they form one river; bot edits pull
 //   toward their own direction and roughen the water.
-// - New articles and big edits send a wave out; a new article makes its patch glow.
-// - The same article edited in two languages at once (usually news) brings them together.
+// - New articles and big edits by people send a wave out and name the article; a new
+//   article makes its patch glow. Bots and scripts shape the water but never get a title.
+// - The same article edited by people in two languages at once (usually news) brings them together.
 //
 // Only main-namespace article edits are used. Editors' names and comments are never shown.
 
@@ -43,7 +44,13 @@ function languageName(code) {
   return code;
 }
 
-// Bot edits flow with the bots, everyone else with their language's family.
+// Is this a person at work? Not a flagged bot, not an account named as one, and not a
+// scripted or mass-editing tool (those sign their summaries "Bot:", or with AWB / JWB).
+const BOT_NAME = /Bot\b|BOT\b|\b[Bb]ot\b/; // InternetArchiveBot, ClueBot NG, AnomieBOT; not Talbot or Botany
+const AUTOMATED = /^\s*(ro)?bot\b|\bbot:|\[\[\s*(wp|wikipedia|project)\s*:\s*(awb|jwb)|\bAutoWikiBrowser\b|\bJWB\b|\(AWB\)|using AWB/i;
+export const isHuman = ev => !ev.bot && !BOT_NAME.test(ev.user ?? "") && !AUTOMATED.test(ev.comment ?? "");
+
+// Automated edits flow with the bots, everyone else with their language's family.
 export const wikiTags = (_title, edit) => edit?.tags ?? null;
 
 export class WikiFeed {
@@ -79,15 +86,16 @@ export class WikiFeed {
       this.byWiki.set(ev.wiki, p);
     }
     const delta = (ev.length?.new ?? 0) - (ev.length?.old ?? 0);
+    const human = isHuman(ev);
     const edit = {
       ts: ev.timestamp,
       artist: ev.title,
       track: ev.type === "new" ? "new article" : `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toLocaleString("en")} bytes`,
       album: "",
       nowPlaying: true,
-      ...(ev.type === "new" && !ev.bot && { loved: true }),
-      tags: [ev.bot ? "bot" : FAMILY.get(lang) ?? "uralic & other european"],
-      bot: !!ev.bot,
+      ...(ev.type === "new" && human && { loved: true }),
+      tags: [human ? FAMILY.get(lang) ?? "uralic & other european" : "bot"],
+      bot: !human,
       isNew: ev.type === "new",
       delta,
     };
