@@ -21,8 +21,9 @@ try {
 }
 
 // Two ways to see the same field: the particle ocean, or an endless pelt of fur.
-// ?view=fur opens on the fur; ?hairs=600000 grows more (or fewer) strands.
+// The fur is the default; ?view=ocean opens on the ocean; ?hairs=600000 grows more (or fewer) strands.
 const viewBtn = document.getElementById("view");
+const CAMERAS = { fur: { yaw: 0, el: 1.05, dist: 3.6 }, ocean: { yaw: 0, el: 0.3, dist: 2.4 } };
 const FUR_FIELD = { x: 8, y: 8 }; // the fur's listener field reaches far out toward the horizon
 let fur = null;
 function setView(name) {
@@ -37,14 +38,16 @@ function setView(name) {
   ocean.surface = name === "fur" ? fur : null;
   if (ocean.surface) ocean.setField(FUR_FIELD, Math.min(innerWidth, innerHeight) < 600 ? 384 : 512, 0.12);
   else ocean.setField(BOUNDS);
+  // Each view opens on its own camera: the fur seen from high above, the ocean from near the water.
+  Object.assign(ocean.view, CAMERAS[name]);
   viewBtn.textContent = name === "fur" ? "Ocean" : "Fur";
   viewBtn.setAttribute("aria-pressed", String(name === "fur"));
   const q = new URLSearchParams(location.search);
-  if (name === "fur") q.set("view", "fur");
+  if (name === "ocean") q.set("view", "ocean");
   else q.delete("view");
   history.replaceState(null, "", q.size ? `?${q}` : location.pathname);
 }
-setView(new URLSearchParams(location.search).get("view") === "fur" ? "fur" : "ocean");
+setView(new URLSearchParams(location.search).get("view") === "ocean" ? "ocean" : "fur");
 viewBtn.addEventListener("click", () => setView(ocean.surface ? "ocean" : "fur"));
 
 // What drives the water: live Wikipedia edits (the default), or people's music (?feed=music).
@@ -446,6 +449,13 @@ function keepOcean(x, y) {
   if (v.ny < -0.8) ay += (-0.8 - v.ny) * 0.5;
   return [ax, ay];
 }
+// How far apart the fur's currents settle: as much as the ground in view allows, so they fill
+// the screen whether the camera looks down from above or out to the horizon.
+function furSpread() {
+  const a = ocean.unproject(innerWidth * 0.1, innerHeight * 0.55), b = ocean.unproject(innerWidth * 0.9, innerHeight * 0.55);
+  const across = a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 12;
+  return Math.max(1, Math.min(2.5, across / 4.5));
+}
 function keepFur(x, y) {
   const fl = Math.hypot(ocean.forward[0], ocean.forward[2]) || 1, rl = Math.hypot(ocean.right[0], ocean.right[2]) || 1;
   const fx = ocean.forward[0] / fl, fy = ocean.forward[2] / fl, rx = ocean.right[0] / rl, ry = ocean.right[2] / rl;
@@ -465,7 +475,7 @@ let last = performance.now();
 requestAnimationFrame(function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000) * speed;
   last = now;
-  currents.spread = ocean.surface ? 2.5 : 1; // the fur gives currents room to spread out
+  currents.spread = ocean.surface ? furSpread() : 1; // the fur gives currents room to spread out
   const states = currents.step(shown, dt, ocean.time, ocean.surface ? keepFur : keepOcean);
   ocean.setListeners(states.map(s => ({
     x: s.x, y: s.y, energy: s.energy, spin: s.spin, rgb: s.rgb,

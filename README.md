@@ -32,7 +32,7 @@ listening instead. Each listener is an unnamed current, and the currents are dri
 - **Likes:** a loved track (Last.fm loves, ListenBrainz feedback) makes its patch of sea glow.
 - **In sync:** two people on the same artist within the last 12 minutes meet and orbit.
 
-**Fur** (the button top right, or `?view=fur`) grows the same data as an endless, extremely
+**Fur** (what the page opens on, seen from high above) grows the data as an endless, extremely
 colourful pelt of several hundred thousand hairs running out to the horizon. The whole pelt
 has one weather: everyone's styles together decide which way it is combed and how bristly it is,
 and the more people are listening the harder the gusts roll across it. Each listener combs a whorl into it like a cowlick, and their listening energy makes
@@ -61,7 +61,7 @@ URL options:
 - `?feed=music`: music instead of Wikipedia (with no participants configured it shows demo data)
 - `?demo`: music with demo data
 - `?listeners=40`: how many demo listeners (default 100, up to 128)
-- `?view=fur`: open on the fur
+- `?view=ocean`: open on the particle ocean instead of the fur
 - `?hairs=600000`: how many strands to grow (default 420,000, 250,000 on phones)
 - `?users=lb:alice,lfm:bob`: try people without editing any file (`lb` = ListenBrainz, `lfm` = Last.fm)
 
