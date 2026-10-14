@@ -1,6 +1,6 @@
 import { CONFIG } from "../config.js";
 import { fetchListens, artistTags } from "./sources.js";
-import { Ocean } from "./ocean.js";
+import { Ocean, BOUNDS } from "./ocean.js";
 import { Fur } from "./fur.js";
 import { Currents, artistHue, hsl } from "./currents.js";
 import { makeDemo, demoTick, DEMO_TAGS } from "./demo.js";
@@ -23,6 +23,7 @@ try {
 // Two ways to see the same field: the particle ocean, or an endless pelt of fur.
 // ?view=fur opens on the fur; ?hairs=600000 grows more (or fewer) strands.
 const viewBtn = document.getElementById("view");
+const FUR_FIELD = { x: 8, y: 8 }; // the fur's listener field reaches far out toward the horizon
 let fur = null;
 function setView(name) {
   if (name === "fur") {
@@ -34,6 +35,8 @@ function setView(name) {
     }
   }
   ocean.surface = name === "fur" ? fur : null;
+  if (ocean.surface) ocean.setField(FUR_FIELD, Math.min(innerWidth, innerHeight) < 600 ? 384 : 512, 0.12);
+  else ocean.setField(BOUNDS);
   viewBtn.textContent = name === "fur" ? "Ocean" : "Fur";
   viewBtn.setAttribute("aria-pressed", String(name === "fur"));
   const q = new URLSearchParams(location.search);
@@ -431,13 +434,39 @@ function saveFrame() {
 }
 
 const speed = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.25 : 1;
-const inView = (x, y) => ocean.project(x, y);
+// Keeps currents where they can be seen. On the ocean they stay in the near half of the
+// screen; on the fur they may roam all the way out toward the horizon, whichever way the
+// camera faces.
+function keepOcean(x, y) {
+  const v = ocean.project(x, y);
+  if (!v) return [0, -0.08];
+  let ax = 0, ay = 0;
+  if (Math.abs(v.nx) > 0.8) ax -= Math.sign(x) * (Math.abs(v.nx) - 0.8) * 0.4;
+  if (v.ny > 0.1) ay -= (v.ny - 0.1) * 0.5;
+  if (v.ny < -0.8) ay += (-0.8 - v.ny) * 0.5;
+  return [ax, ay];
+}
+function keepFur(x, y) {
+  const fl = Math.hypot(ocean.forward[0], ocean.forward[2]) || 1, rl = Math.hypot(ocean.right[0], ocean.right[2]) || 1;
+  const fx = ocean.forward[0] / fl, fy = ocean.forward[2] / fl, rx = ocean.right[0] / rl, ry = ocean.right[2] / rl;
+  const v = ocean.project(x, y);
+  if (!v) return [fx * 0.12, fy * 0.12]; // behind the camera: come round in front
+  let k = 0, s = 0; // push along the view (toward the horizon) and across it
+  if (Math.abs(v.nx) > 0.85) s -= Math.sign(v.nx) * (Math.abs(v.nx) - 0.85) * 0.5;
+  if (v.ny > 0.6) k -= (v.ny - 0.6) * 0.6;
+  if (v.ny < -0.85) k += (-0.85 - v.ny) * 0.6;
+  let ax = fx * k + rx * s, ay = fy * k + ry * s;
+  const r = Math.hypot(x, y), edge = FUR_FIELD.x - 1;
+  if (r > edge) { ax -= x / r * (r - edge) * 0.1; ay -= y / r * (r - edge) * 0.1; }
+  return [ax, ay];
+}
 for (let i = 0; i < 90; i++) ocean.frame(1 / 30); // let the currents settle before the first look
 let last = performance.now();
 requestAnimationFrame(function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000) * speed;
   last = now;
-  const states = currents.step(shown, dt, ocean.time, inView);
+  currents.spread = ocean.surface ? 2.5 : 1; // the fur gives currents room to spread out
+  const states = currents.step(shown, dt, ocean.time, ocean.surface ? keepFur : keepOcean);
   ocean.setListeners(states.map(s => ({
     x: s.x, y: s.y, energy: s.energy, spin: s.spin, rgb: s.rgb,
     loved: s.loved, drift: s.drift, chop: s.chop, surge: s.surge,

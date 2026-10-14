@@ -33,6 +33,7 @@ const int MAXL = ${MAXL};
 const int MAXR = ${MAXR};
 uniform sampler2D uListeners; // row 0: xy, energy, spin. row 1: rgb, loved. row 2: style current xy, chop, song-start surge
 uniform int uCount;
+uniform float uGrow;          // far from the middle, a current's footprint grows (so it still reads)
 uniform vec4 uR[MAXR];        // ripple: xy, birth time, strength
 uniform vec3 uRC[MAXR];
 in vec2 vUv;
@@ -49,7 +50,8 @@ void main() {
   for (int i = 0; i < MAXL; i++) {
     if (i >= uCount) break;
     vec4 A = texelFetch(uListeners, ivec2(i, 0), 0);
-    vec2 d = p - A.xy;
+    float sc = 1.0 + uGrow * length(A.xy);
+    vec2 d = (p - A.xy) / sc;
     float r2 = dot(d, d);
     if (r2 > 2.5) continue;
     vec4 B = texelFetch(uListeners, ivec2(i, 1), 0);
@@ -332,6 +334,9 @@ export class Ocean {
     this.gl = gl;
     this.canvas = canvas;
     this.time = 0;
+    this.bounds = { ...BOUNDS };  // the water the listener field covers
+    this.fieldSize = FIELD;
+    this.grow = 0;
     this.view = { yaw: 0, el: 0.3, dist: 2.4 };
     this.W = Math.min(innerWidth, innerHeight) < 600 ? 256 : 512;
     this.N = this.W * this.W;
@@ -386,8 +391,28 @@ export class Ocean {
     this.simFb = [0, 1].map(i => this.framebuffer(this.pos[i], this.col[i]));
     this.cur = 0;
     this.listeners = this.texture(MAXL, 3, gl.RGBA32F, gl.FLOAT, null, gl.NEAREST);
-    this.fields = [0, 1, 2].map(() => this.texture(FIELD, FIELD, gl.RGBA16F, gl.HALF_FLOAT, null, gl.LINEAR));
+    this.makeField();
+  }
+
+  makeField() {
+    const gl = this.gl, n = this.fieldSize;
+    if (this.fields) {
+      this.fields.forEach(t => gl.deleteTexture(t));
+      gl.deleteFramebuffer(this.fieldFb);
+    }
+    this.fields = [0, 1, 2].map(() => this.texture(n, n, gl.RGBA16F, gl.HALF_FLOAT, null, gl.LINEAR));
     this.fieldFb = this.framebuffer(...this.fields);
+  }
+
+  // How much water the listener field covers, at what resolution, and how much a current's
+  // footprint grows with distance. The fur spreads the field far toward the horizon.
+  setField(bounds, size = FIELD, grow = 0) {
+    this.bounds = { ...bounds };
+    this.grow = grow;
+    if (size !== this.fieldSize) {
+      this.fieldSize = size;
+      this.makeField();
+    }
   }
 
   resize() {
@@ -444,7 +469,7 @@ export class Ocean {
     if (d[1] >= 0) return null;
     const t = -this.eye[1] / d[1];
     const x = this.eye[0] + d[0] * t, y = this.eye[2] + d[2] * t;
-    return Math.abs(x) <= BOUNDS.x && Math.abs(y) <= BOUNDS.y ? { x, y } : null;
+    return Math.abs(x) <= this.bounds.x && Math.abs(y) <= this.bounds.y ? { x, y } : null;
   }
 
   // list: { x, y, energy, spin, rgb, loved, drift: [x, y], chop, surge }
@@ -488,7 +513,7 @@ export class Ocean {
 
   common(prog) {
     this.gl.uniform1f(prog.u.uTime, this.time);
-    this.gl.uniform2f(prog.u.uBounds, BOUNDS.x, BOUNDS.y);
+    this.gl.uniform2f(prog.u.uBounds, this.bounds.x, this.bounds.y);
   }
 
   // Listeners and ripples become one texture of flow, height, pigment and mood.
@@ -498,7 +523,8 @@ export class Ocean {
     gl.disable(gl.BLEND);
     gl.useProgram(f.p);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fieldFb);
-    gl.viewport(0, 0, FIELD, FIELD);
+    gl.viewport(0, 0, this.fieldSize, this.fieldSize);
+    gl.uniform1f(f.u.uGrow, this.grow);
     this.common(f);
     this.bind(f, "uListeners", 0, this.listeners);
     gl.uniform1i(f.u.uCount, this.count);
@@ -558,7 +584,7 @@ export class Ocean {
     gl.uniform1i(composite.u.uTrail, 0);
     gl.uniform1f(composite.u.uTime, this.time);
     gl.uniform1f(composite.u.uExposure, 1.25);
-    const horizon = this.project(0, BOUNDS.y);
+    const horizon = this.project(0, this.bounds.y);
     gl.uniform1f(composite.u.uHorizon, horizon ? 1 - horizon.sy / this.h : 0.7);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

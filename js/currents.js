@@ -86,6 +86,7 @@ export class Currents {
     this.bonds = [];
     this.similarity = new Map();
     this.tagsFor = () => null;
+    this.spread = 1;   // how far apart currents settle; the fur gives them more room
     this.primed = false;
     this.bondKeys = new Set();
   }
@@ -96,7 +97,8 @@ export class Currents {
       const r = artistHue(p.name + "#") / 360;
       s = {
         id: this.state.size,
-        x: (Math.random() * 2 - 1) * 1.4, y: Math.random() * 1.4 - 1.2, vx: 0, vy: 0,
+        // Born somewhere in view, scattered further when there's more room (the fur).
+        x: (Math.random() * 2 - 1) * 1.4 * this.spread, y: Math.random() * (1.4 + 3 * (this.spread - 1)) - 1.2, vx: 0, vy: 0,
         f1: 0.7 + r, f2: 1.3 - r * 0.5, ph: r * 100, spin: r > 0.5 ? 1 : -1,
         energy: 0.15, target: 0.15, rgb: [...QUIET], targetRgb: [...QUIET],
         drift: [0, 0], chop: 0.5, style: null, styles: [],
@@ -201,8 +203,8 @@ export class Currents {
     return this.similarity.get(this.pairKey(a, b)) ?? 0;
   }
 
-  // inView(x, y) gives normalised screen coords so currents stay where you can see them.
-  step(people, dt, t, inView) {
+  // keep(x, y) returns a push [ax, ay] that keeps a current where it can be seen.
+  step(people, dt, t, keep) {
     const states = people.map(p => this.stateFor(p));
     const crowd = Math.min(1, 12 / Math.max(1, people.length)); // more people, gentler pull from each
     people.forEach((p, i) => {
@@ -234,12 +236,13 @@ export class Currents {
         if (i === j) continue;
         const o = states[j], dx = o.x - s.x, dy = o.y - s.y, d = Math.hypot(dx, dy) + 1e-3;
         const sim = this.similarityOf(p, people[j]);
-        const rest = 0.3 + (1 - sim) * 1.6;
+        const rest = (0.3 + (1 - sim) * 1.6) * this.spread;
         const k = (0.006 + 0.035 * sim) * crowd;
-        const f = Math.max(-0.03, Math.min(0.03, (d - rest) * k));
+        const f = Math.max(-0.03, Math.min(0.03, (d - rest) * k)) * this.spread;
         ax += dx / d * f;
         ay += dy / d * f;
-        if (d < 0.2) { ax -= dx / d * (0.2 - d) * 0.2; ay -= dy / d * (0.2 - d) * 0.2; }
+        const near = 0.2 * this.spread;
+        if (d < near) { ax -= dx / d * (near - d) * 0.2; ay -= dy / d * (near - d) * 0.2; }
       }
 
       // Playing the same artist right now: meet and orbit.
@@ -252,13 +255,9 @@ export class Currents {
         ay += dy / d * f + dx / d * 0.02 * bd.strength;
       }
 
-      const v = inView(s.x, s.y);
-      if (!v) ay -= 0.08;
-      else {
-        if (Math.abs(v.nx) > 0.8) ax -= Math.sign(s.x) * (Math.abs(v.nx) - 0.8) * 0.4;
-        if (v.ny > 0.1) ay -= (v.ny - 0.1) * 0.5;
-        if (v.ny < -0.8) ay += (-0.8 - v.ny) * 0.5;
-      }
+      const [kx, ky] = keep(s.x, s.y);
+      ax += kx;
+      ay += ky;
 
       s.vx = (s.vx + ax * dt) * Math.exp(-dt * 0.5);
       s.vy = (s.vy + ay * dt) * Math.exp(-dt * 0.5);
