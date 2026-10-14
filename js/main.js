@@ -55,11 +55,11 @@ viewBtn.addEventListener("click", () => setView(ocean.surface ? "ocean" : "fur")
 
 const params = new URLSearchParams(location.search);
 
-// What it's painted in: artists' pigments led by YInMn Blue (the default), or ?palette=rainbow.
-const PALETTE = params.get("palette") === "rainbow" ? "rainbow" : "pigments";
+// What it's painted in: one extremely bright red (the default), or ?palette=rainbow.
+const PALETTE = params.get("palette") === "rainbow" ? "rainbow" : "red";
 setPalette(PALETTE);
 const paletteBtn = document.getElementById("palette");
-paletteBtn.textContent = PALETTES[PALETTE === "rainbow" ? "pigments" : "rainbow"].name;
+paletteBtn.textContent = PALETTES[PALETTE === "rainbow" ? "red" : "rainbow"].name;
 paletteBtn.addEventListener("click", () => {
   const q = new URLSearchParams(location.search);
   if (PALETTE === "rainbow") q.delete("palette");

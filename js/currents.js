@@ -1,4 +1,4 @@
-import { colourOf } from "./palette.js";
+import { colourOf, quietColour } from "./palette.js";
 
 // Listeners as currents on the water, driven by what they play. (The same machinery runs
 // any feed: for Wikipedia, each language is a current and its edits are its "plays".)
@@ -58,7 +58,6 @@ function cosine(a, b) {
   return d / (a.norm * b.norm);
 }
 
-const QUIET = [0.2, 0.3, 0.5];
 
 // How a feed's activity becomes currents. Music moves over hours; other feeds can be quicker.
 const MUSIC = {
@@ -93,7 +92,7 @@ export class Currents {
         // Born somewhere in view, scattered further when there's more room (the fur).
         x: (Math.random() * 2 - 1) * 1.4 * this.spread, y: Math.random() * (1.4 + 3 * (this.spread - 1)) - 1.2, vx: 0, vy: 0,
         f1: 0.7 + r, f2: 1.3 - r * 0.5, ph: r * 100, spin: r > 0.5 ? 1 : -1,
-        energy: 0.15, target: 0.15, rgb: [...QUIET], targetRgb: [...QUIET],
+        energy: 0.15, target: 0.15, rgb: quietColour(), targetRgb: quietColour(),
         drift: [0, 0], chop: 0.5, style: null, styles: [],
         loved: 0, lovedTarget: 0, surge: 0,
         palette: [], nextColourAt: 0, colourArtist: null, playing: null, last: null,
@@ -215,7 +214,7 @@ export class Currents {
           pick = s.palette.find(a => (r -= a.w) <= 0) ?? s.palette[0] ?? null;
         }
         s.colourArtist = pick?.artist ?? null;
-        s.targetRgb = pick ? colourOf(artistHue(pick.artist)) : [...QUIET];
+        s.targetRgb = pick ? colourOf(artistHue(pick.artist)) : quietColour();
         s.nextColourAt = t + 4 + Math.random() * 4;
       }
       for (let c = 0; c < 3; c++) s.rgb[c] += (s.targetRgb[c] - s.rgb[c]) * Math.min(1, dt * 0.6);

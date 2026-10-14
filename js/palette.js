@@ -1,34 +1,31 @@
-// The colours everything is painted in: a set of punchy artists' pigments led by YInMn Blue
-// (the default), or the original full-spectrum rainbow (?palette=rainbow).
+// The colours everything is painted in: one extremely bright red, from oxblood shadows through
+// crimson and scarlet to pale rose highlights (the default), or the original full-spectrum
+// rainbow (?palette=rainbow).
 //
 // Both are addressed by hue (0-360), so an artist or article keeps one colour for everyone:
-// the rainbow uses the hue directly, the pigments pick the swatch that hue falls on.
-
-const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+// the rainbow uses the hue directly; the red maps it to a point on its ramp.
 
 export const PALETTES = {
-  pigments: {
-    name: "Pigments",
-    tip: 0.12,   // tips shift hue only slightly, so the pigments stay true
-    shift: -0.55, // centre the pelt on the blues; the warm pigments are its accents
-    punch: 1,     // keep colours saturated as they brighten instead of washing toward white
-    swatches: [
-      ["YInMn Blue", "#2E5090"],
-      ["International Klein Blue", "#002FA7"],
-      ["YInMn Blue", "#2E5090"],
-      ["Opera Rose", "#D6247F"],
-      ["Vermilion", "#E34234"],
-      ["Cadmium Orange", "#F28C28"],
-      ["Hansa Yellow", "#F9D71C"],
-      ["Cobalt Teal", "#0AA59B"],
-    ].map(([name, h]) => ({ name, rgb: hex(h) })),
+  red: {
+    name: "Red",
+    tip: 0.08,          // tips warm only slightly toward orange or rose, so it stays red
+    punch: 1,           // brighten keeping the colour saturated instead of washing toward white
+    haze: [0.12, 0.008, 0.02],
+    quiet: [0.4, 0.02, 0.05],   // a current with nothing playing
+    ramp: [             // dark to light, as rgb 0-1
+      [0.3, 0.0, 0.03],     // oxblood
+      [0.85, 0.02, 0.08],   // crimson
+      [1.0, 0.06, 0.04],    // scarlet
+      [1.0, 0.26, 0.16],    // hot red
+      [1.0, 0.76, 0.72],    // pale rose
+    ],
   },
-  rainbow: { name: "Rainbow", tip: 0.55, shift: 0, punch: 0, swatches: null },
+  rainbow: { name: "Rainbow", tip: 0.55, punch: 0, haze: [0.1, 0.045, 0.14], quiet: [0.2, 0.3, 0.5], ramp: null },
 };
 
-export let palette = PALETTES.pigments;
+export let palette = PALETTES.red;
 export function setPalette(name) {
-  palette = PALETTES[name] ?? PALETTES.pigments;
+  palette = PALETTES[name] ?? PALETTES.red;
 }
 
 export function hsl(h, s, l) {
@@ -40,23 +37,33 @@ export function hsl(h, s, l) {
   return [f(0), f(8), f(4)];
 }
 
-// A hue's colour as rgb (0-1). Lightness above 0.56 tints a pigment toward white.
+export const quietColour = () => [...palette.quiet];
+
+// Somewhere on the ramp (0 = darkest, 1 = lightest).
+function rampAt(u) {
+  const r = palette.ramp, x = Math.max(0, Math.min(1, u)) * (r.length - 1);
+  const i = Math.min(Math.floor(x), r.length - 2), f = x - i;
+  return r[i].map((v, c) => v + (r[i + 1][c] - v) * f);
+}
+
+// A hue's colour as rgb (0-1). On the red, data colours stay in the bright half of the ramp;
+// lightness above 0.56 tints them further toward rose and white.
 export function colourOf(hue, light = 0.56, sat = 0.95) {
-  const sw = palette.swatches;
-  if (!sw) return hsl(hue, sat, light);
-  const c = sw[Math.floor((((hue % 360) + 360) % 360) / 360 * sw.length)].rgb;
+  if (!palette.ramp) return hsl(hue, sat, light);
+  const u = 1 - Math.abs(2 * (((hue % 360) + 360) % 360) / 360 - 1);
+  const c = rampAt(0.35 + 0.4 * u);
   const t = Math.max(0, (light - 0.56) / 0.44);
-  return c.map(v => v + (1 - v) * t);
+  return c.map(v => v + (1 - v) * t * 0.85);
 }
 
 export function cssOf(hue, light = 0.56, sat = 0.95) {
-  const [r, g, b] = colourOf(hue, light, sat).map(v => Math.round(v * 255));
+  const [r, g, b] = colourOf(hue, light, sat).map(v => Math.round(Math.min(1, v) * 255));
   return `rgb(${r},${g},${b})`;
 }
 
-// For the shaders: up to eight swatches, flattened (none for the rainbow).
+// For the shaders: the ramp, flattened (empty for the rainbow).
 export function paletteUniform() {
-  const out = new Float32Array(8 * 3), sw = palette.swatches ?? [];
-  sw.forEach((s, i) => out.set(s.rgb, i * 3));
-  return { data: out, count: sw.length, tip: palette.tip, shift: palette.shift, punch: palette.punch };
+  const out = new Float32Array(8 * 3), r = palette.ramp ?? [];
+  r.forEach((c, i) => out.set(c, i * 3));
+  return { data: out, count: r.length, tip: palette.tip, punch: palette.punch, haze: palette.haze };
 }
