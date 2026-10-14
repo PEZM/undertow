@@ -18,6 +18,9 @@ EventStreams feed: no key, no sign-up. Each language edition is a current:
   summaries) shape the water but never get a title.
 - **The same article edited by people in two languages at once** (usually news) brings them together to orbit.
 - The page replays the last five minutes on load, so it starts full. Editors' names are never shown.
+- **Labels or every edit:** by default a few edits are named in labels, each hanging from a red hair.
+  The **Every edit** button (or `?marks=edits`) drops the labels and instead turns a hair red for
+  every edit a person makes, for half a minute, so the pelt is flecked with live red.
 
 **Music** (`?feed=music`, or the button top right) uses people's Last.fm and ListenBrainz
 listening instead. Each listener is an unnamed current, and the currents are driven by the music:

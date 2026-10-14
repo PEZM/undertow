@@ -70,10 +70,23 @@ paletteBtn.addEventListener("click", () => {
   location.search = q.size ? `?${q}` : "";
 });
 
+// How edits show on the fur: a few named in labels, each hanging from a red hair (the
+// default), or ?marks=edits: no labels, and every edit by a person turns a hair red.
+const EVERY_EDIT = params.get("marks") === "edits";
+const marksBtn = document.getElementById("marks");
+marksBtn.textContent = EVERY_EDIT ? "Labels" : "Every edit";
+marksBtn.addEventListener("click", () => {
+  const q = new URLSearchParams(location.search);
+  if (EVERY_EDIT) q.delete("marks");
+  else q.set("marks", "edits");
+  location.search = q.size ? `?${q}` : "";
+});
+
 // What drives the water: live Wikipedia edits (the default), or people's music (?feed=music).
 const FEED = params.get("feed") === "music" || params.has("users") || params.has("demo") ? "music" : "wiki";
 const feedBtn = document.getElementById("feed");
 feedBtn.textContent = FEED === "wiki" ? "Music" : "Wikipedia";
+marksBtn.hidden = FEED !== "wiki"; // "every edit" is a Wikipedia mode
 feedBtn.addEventListener("click", () => {
   const q = new URLSearchParams(location.search);
   for (const k of ["feed", "users", "demo", "listeners"]) q.delete(k);
@@ -143,6 +156,7 @@ async function loadParticipants() {
 // small event; loved songs and two people meeting get to cut in a little sooner.
 const MAX_TAGS = 6;
 function tag(state, artist, detail, hue, priority = false) {
+  if (EVERY_EDIT) return; // in this mode the red hairs speak for themselves
   const since = ocean.time - lastTagAt;
   if (since < (priority ? Math.min(tagGap, 0.8) : tagGap) || tags.length >= MAX_TAGS) return;
   const pr = ocean.project(state.x, state.y);
@@ -266,6 +280,12 @@ function startWiki() {
   currents.tagsFor = wikiTags;
   wiki = new WikiFeed((p, edit, replayed) => {
     if (replayed || edit.bot || !shown.includes(p)) return;
+    if (EVERY_EDIT && ocean.surface) {
+      // A red hair somewhere in this language's whorl, which spreads wider further out.
+      const s = currents.stateFor(p), a = Math.random() * Math.PI * 2;
+      const r = 0.35 * Math.sqrt(Math.random()) * (1 + 0.12 * Math.hypot(s.x, s.y));
+      ocean.surface.markEdit(s.x + Math.cos(a) * r, s.y + Math.sin(a) * r);
+    }
     const t = performance.now();
     const wave = (edit.isNew || Math.abs(edit.delta) >= 800) && t - lastWave >= 1000 && t - (p.lastWave ?? -Infinity) >= 8000;
     if (wave) {

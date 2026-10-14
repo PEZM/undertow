@@ -18,6 +18,8 @@ import { COMMON, NOISE, FULL_VS, MAXR, program } from "./ocean.js";
 import { paletteUniform } from "./palette.js";
 
 const SEG = 7;                  // joints per strand
+const EDIT_LIFE = 30;           // seconds a hair stays red after an edit lands on it
+const MARK_BATCH = 64;          // edits marked per draw
 const R_IN = 2.4, R_OUT = 18;   // even pelt over the listeners, thinning out to the horizon
 const INNER = 1 / (1 + 2 * Math.log(R_OUT / R_IN)); // share of strands in the even part
 const LIGHT = (v => v.map(x => x / Math.hypot(...v)))([0.25, 0.55, 1.0]);
@@ -238,12 +240,14 @@ uniform vec2 uRes;
 uniform float uPxScale;
 uniform float uTip;   // how far the hue shifts toward the tips
 uniform int uMarked[6]; // strands carrying a label right now: drawn red
+uniform sampler2D uEditedAt; // when each strand was last marked by an edit (seconds)
 out vec3 vCol;
 out vec3 vTan;
 out vec3 vPos;
 out float vT;
 out float vAlpha;
 out float vGlow;
+out float vRed;   // how red this point of the hair is (an edit or a label)
 const int SEG = ${SEG};
 
 // Rotates a colour around the grey axis: shifts its hue, keeps its brightness.
@@ -311,10 +315,13 @@ void main() {
   vCol = mix(look.rgb, hueShift(look.rgb, uTip) * 1.2 + 0.04, t * t);
   // The labelled hair turns red only where hair shows: its root stays the pelt's own colour,
   // sinking into the shade like its neighbours, so it doesn't look longer than they do.
-  if (marked) {
-    float red = smoothstep(0.3, 0.7, t);
-    vCol = mix(vCol, vec3(1.0, 0.03, 0.03), red);
-    vAlpha = mix(vAlpha, 1.0, red);
+  // A hair an edit landed on lately is red too: in quickly, fading out over its last seconds.
+  float since = uTime - texelFetch(uEditedAt, ij, 0).r;
+  float edited = since >= 0.0 ? smoothstep(0.0, 0.4, since) * (1.0 - smoothstep(${EDIT_LIFE - 6}.0, ${EDIT_LIFE}.0, since)) : 0.0;
+  vRed = 0.0;
+  if (marked || edited > 0.0) {
+    vRed = smoothstep(0.3, 0.7, t) * (marked ? 1.0 : edited);
+    vAlpha = mix(vAlpha, 1.0, vRed);
   }
 }`;
 
@@ -332,6 +339,7 @@ in vec3 vPos;
 in float vT;
 in float vAlpha;
 in float vGlow;
+in float vRed;
 out vec4 o;
 void main() {
   vec3 T = normalize(vTan), V = normalize(uEye - vPos), H = normalize(uLight + V);
@@ -352,6 +360,8 @@ void main() {
   vec3 punchy = c * (1.0 - exp(-peak * 1.5)) / peak;
   c = mix(soft, punchy, uPunch);
   c = mix(c, uHaze, 1.0 - exp(-max(0.0, length(uEye - vPos) - 2.5) * 0.11));
+  // Red goes on last, after the light, so sheen and highlights can't wash it to pink.
+  c = mix(c, vec3(0.92, 0.02, 0.03) * mix(0.75, 1.0, diff), vRed);
   o = vec4(c, vAlpha * (1.0 - smoothstep(0.9, 1.0, vT) * 0.6));
 }`;
 
@@ -406,6 +416,22 @@ function pcg(v) {
 }
 const rnd = v => pcg(v >>> 0) / 4294967296;
 
+// Stamps the current time into the marks texture at each edited strand's texel.
+const MARK_VS = `#version 300 es
+uniform int uIdx[${MARK_BATCH}];
+uniform int uW;
+void main() {
+  int i = uIdx[gl_VertexID];
+  vec2 texel = vec2(float(i % uW), float(i / uW)) + 0.5;
+  gl_Position = vec4(texel / float(uW) * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = 1.0;
+}`;
+const MARK_FS = `#version 300 es
+precision highp float;
+uniform float uTime;
+out vec4 o;
+void main() { o = vec4(uTime); }`;
+
 export class Fur {
   // count: roughly how many strands to grow.
   constructor(ocean, count) {
@@ -432,6 +458,11 @@ export class Fur {
     this.height = hills; // the ocean places labels on this ground instead of its swell
     this.samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
     this.marked = [];    // strands carrying a label
+    this.edits = [];     // strands edits just landed on, waiting to be stamped
+    this.progs.mark = program(gl, MARK_VS, MARK_FS);
+    this.marks = ocean.texture(this.W, this.W, gl.RGBA32F, gl.FLOAT, null, gl.NEAREST);
+    this.marksFb = ocean.framebuffer(this.marks);
+    gl.clearBufferfv(gl.COLOR, 0, [-1e9, -1e9, -1e9, -1e9]); // never marked
     this.texel = new Float32Array(4);
   }
 
@@ -521,6 +552,29 @@ export class Fur {
     this.gl.uniform1f(prog.u.uMarks, pal.marks);
   }
 
+  // An edit landed near (x, y): the hair rooted nearest turns red for a while.
+  markEdit(x, y) {
+    if (this.edits.length < 1024) this.edits.push(this.nearestStrand(x, y));
+  }
+
+  stamp() {
+    if (!this.edits.length) return;
+    const gl = this.gl, m = this.progs.mark;
+    gl.useProgram(m.p);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.marksFb);
+    gl.viewport(0, 0, this.W, this.W);
+    gl.uniform1i(m.u.uW, this.W);
+    gl.uniform1f(m.u.uTime, this.ocean.time);
+    for (let k = 0; k < this.edits.length; k += MARK_BATCH) {
+      const batch = this.edits.slice(k, k + MARK_BATCH);
+      const idx = new Int32Array(MARK_BATCH);
+      idx.set(batch);
+      gl.uniform1iv(m.u.uIdx, idx);
+      gl.drawArrays(gl.POINTS, 0, batch.length);
+    }
+    this.edits.length = 0;
+  }
+
   // Every strand reads the field and springs toward where the wind and the currents push it.
   grow(dt) {
     const gl = this.gl, o = this.ocean, s = this.progs.strands;
@@ -564,6 +618,7 @@ export class Fur {
     gl.bindVertexArray(o.vao);
     gl.disable(gl.BLEND);
     this.grow(dt);
+    this.stamp();
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.msFb);
     gl.viewport(0, 0, this.w, this.h);
@@ -590,6 +645,7 @@ export class Fur {
     o.bind(hair, "uState", 0, this.state[this.cur]);
     o.bind(hair, "uLook", 1, this.look[this.cur]);
     o.bind(hair, "uMore", 2, this.more);
+    o.bind(hair, "uEditedAt", 4, this.marks);
     gl.uniformMatrix4fv(hair.u.uViewProj, false, o.vp);
     gl.uniform2f(hair.u.uRes, this.w, this.h);
     gl.uniform1f(hair.u.uPxScale, 0.5 * this.h / o.tanHalf);
