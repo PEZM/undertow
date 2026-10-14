@@ -86,6 +86,7 @@ vec3 hsv(float h, float s, float v) {
 // The pelt's colour: the rainbow straight from the hue, or a point on the red ramp.
 uniform vec3 uPal[8];
 uniform int uPalN;
+uniform float uMarks;  // 0: no markings at all (white)
 vec3 swatch(float h, float s, float v) {
   if (uPalN == 0) return hsv(h, s, v);
   float u = (1.0 - abs(2.0 * fract(h) - 1.0)) * float(uPalN - 1); // back and forth along the ramp
@@ -206,7 +207,7 @@ void main() {
 
   float marks;
   float hue = furHue(p, uTime, marks) + (r2 - 0.5) * 0.03;
-  vec3 col = swatch(hue, 0.85 + 0.15 * r0, (0.84 + 0.16 * r1) * mix(0.7, 1.0, smoothstep(-0.5, 0.5, marks)));
+  vec3 col = swatch(hue, 0.85 + 0.15 * r0, (0.84 + 0.16 * r1) * mix(1.0 - 0.3 * uMarks, 1.0, smoothstep(-0.5, 0.5, marks)));
   // Overlapping currents average toward grey, so push the dye back to full colour.
   float lum = dot(dye, vec3(0.3, 0.55, 0.15));
   vec3 vivid = clamp(lum + (dye - lum) * 2.4, 0.0, 1.0) * 1.1;
@@ -313,6 +314,8 @@ uniform vec3 uEye;
 uniform vec3 uLight;
 uniform vec3 uHaze;
 uniform float uPunch;  // 1: brighten keeping the colour's hue and saturation (for the red)
+uniform float uExposure;
+uniform float uRoots;  // how dark the hair is at its roots
 in vec3 vCol;
 in vec3 vTan;
 in vec3 vPos;
@@ -325,7 +328,7 @@ void main() {
   float TL = dot(T, uLight), TH = dot(T, H);
   float diff = sqrt(max(0.0, 1.0 - TL * TL));
   float sh = sqrt(max(0.0, 1.0 - TH * TH));
-  float ao = mix(0.05, 1.0, pow(vT, 0.85));                 // dark at the roots, deep in the pelt
+  float ao = mix(uRoots, 1.0, pow(vT, 0.85));               // dark at the roots, deep in the pelt
   float back = pow(max(0.0, dot(-V, uLight)), 3.0) * vT * vT; // light through the tips
   vec3 film = 0.5 + 0.5 * cos(6.2831 * (TH * 0.6 + dot(V, T) * 0.3 + vec3(0.0, 0.33, 0.67)));
   vec3 c = vCol * (0.2 + 0.9 * diff) * ao
@@ -333,7 +336,7 @@ void main() {
          + film * pow(sh, 12.0) * 0.2 * ao
          + vec3(pow(sh, 90.0) * 0.45 * vT);
   c *= 1.0 + vGlow * vT * 2.2; // a loved song lights the tips
-  c *= 1.0 + 1.4 * uPunch;  // more light, so the red blazes
+  c *= uExposure;  // the red and the white need more light than the rainbow
   vec3 soft = 1.0 - exp(-c * 1.5);
   float peak = max(max(c.r, c.g), max(c.b, 1e-4));
   vec3 punchy = c * (1.0 - exp(-peak * 1.5)) / peak;
@@ -355,6 +358,7 @@ uniform vec3 uFwd;
 uniform float uTanHalf;
 uniform float uAspect;
 uniform vec3 uHaze;
+uniform float uSkin;
 in vec2 vUv;
 out vec4 o;
 void main() {
@@ -364,7 +368,7 @@ void main() {
   if (d.y < 0.0) {
     float t = -uEye.y / d.y, marks;
     vec2 p = uEye.xz + d.xz * t;
-    c = mix(swatch(furHue(p, uTime, marks), 0.7, 0.07), uHaze, 1.0 - exp(-max(0.0, t - 2.5) * 0.11));
+    c = mix(swatch(furHue(p, uTime, marks), 0.7, uSkin), uHaze, 1.0 - exp(-max(0.0, t - 2.5) * 0.11));
   }
   o = vec4(c, 1.0);
 }`;
@@ -443,6 +447,7 @@ export class Fur {
   setPalette(prog, pal) {
     this.gl.uniform3fv(prog.u.uPal, pal.data);
     this.gl.uniform1i(prog.u.uPalN, pal.count);
+    this.gl.uniform1f(prog.u.uMarks, pal.marks);
   }
 
   // Every strand reads the field and springs toward where the wind and the currents push it.
@@ -501,6 +506,7 @@ export class Fur {
     gl.uniform1f(back.u.uAspect, o.aspect);
     gl.uniform3fv(back.u.uHaze, paletteUniform().haze);
     this.setPalette(back, paletteUniform());
+    gl.uniform1f(back.u.uSkin, paletteUniform().skin);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     gl.enable(gl.DEPTH_TEST);
@@ -522,6 +528,8 @@ export class Fur {
     const pal = paletteUniform();
     gl.uniform1f(hair.u.uTip, pal.tip);
     gl.uniform1f(hair.u.uPunch, pal.punch);
+    gl.uniform1f(hair.u.uExposure, pal.exposure);
+    gl.uniform1f(hair.u.uRoots, pal.roots);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (SEG + 1) * 2, this.N);
     gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     gl.disable(gl.DEPTH_TEST);

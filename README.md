@@ -41,9 +41,10 @@ frizzy. A song start sends a wave rolling out through the hair all the way to th
 the fur it passes in its artist's colour, and the trail slowly grows back out to the pelt's own
 drifting rainbow.
 
-**Colour** is one extremely bright red by default, from oxblood in the hollows through crimson
-and scarlet to pale rose on the highlights; every artist or article is a shade of it. The
-**Rainbow** button (or `?palette=rainbow`) switches to the original full spectrum.
+**Colour:** by default it is plain white fur with no patterns: the data shows only in how the
+hair moves, swirls and stands up, and in its light and shadow. The palette button steps through
+two alternatives: **Red** (`?palette=red`), one extremely bright red from oxblood to pale rose,
+and **Rainbow** (`?palette=rainbow`), the original full spectrum.
 
 The same artist (or article) is the same colour for everyone. Now and then a single particle lights up
 and names its artist in a tiny tag.
@@ -66,7 +67,7 @@ URL options:
 - `?demo`: music with demo data
 - `?listeners=40`: how many demo listeners (default 100, up to 128)
 - `?view=ocean`: open on the particle ocean instead of the fur
-- `?palette=rainbow`: the original full-spectrum colours instead of the red
+- `?palette=red` / `?palette=rainbow`: bright red, or the original full spectrum, instead of white
 - `?hairs=600000`: how many strands to grow (default 420,000, 250,000 on phones)
 - `?users=lb:alice,lfm:bob`: try people without editing any file (`lb` = ListenBrainz, `lfm` = Last.fm)
 
@@ -106,7 +107,7 @@ Only add people who have said yes. A username in this file makes their recent li
 |---|---|
 | `js/ocean.js` | WebGL2 ocean: the listener field, particles, swell, ripples, trails |
 | `js/fur.js` | WebGL2 fur: spring-driven strands grown from the same listener field |
-| `js/palette.js` | The red and rainbow palettes everything is coloured with |
+| `js/palette.js` | The white, red and rainbow palettes everything is coloured with |
 | `js/currents.js` | Listeners as currents: styles, likes, surges, similarity, sync |
 | `js/wiki.js` | Live Wikipedia edits: languages as currents, families as styles |
 | `js/sources.js` | Plays and likes from Last.fm / ListenBrainz, genres from Last.fm / MusicBrainz |

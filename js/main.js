@@ -3,7 +3,7 @@ import { fetchListens, artistTags } from "./sources.js";
 import { Ocean, BOUNDS } from "./ocean.js";
 import { Fur } from "./fur.js";
 import { Currents, artistHue } from "./currents.js";
-import { colourOf, cssOf, setPalette, PALETTES } from "./palette.js";
+import { colourOf, cssOf, detailCss, setPalette, PALETTES } from "./palette.js";
 import { makeDemo, demoTick, DEMO_TAGS } from "./demo.js";
 import { WikiFeed, WIKI_TIMING, wikiTags } from "./wiki.js";
 
@@ -55,15 +55,18 @@ viewBtn.addEventListener("click", () => setView(ocean.surface ? "ocean" : "fur")
 
 const params = new URLSearchParams(location.search);
 
-// What it's painted in: one extremely bright red (the default), or ?palette=rainbow.
-const PALETTE = params.get("palette") === "rainbow" ? "rainbow" : "red";
+// What it's painted in: plain white fur (the default), ?palette=red or ?palette=rainbow.
+// The button steps through them in turn.
+const PALETTE_ORDER = ["white", "red", "rainbow"];
+const PALETTE = PALETTE_ORDER.includes(params.get("palette")) ? params.get("palette") : "white";
 setPalette(PALETTE);
 const paletteBtn = document.getElementById("palette");
-paletteBtn.textContent = PALETTES[PALETTE === "rainbow" ? "red" : "rainbow"].name;
+const nextPalette = PALETTE_ORDER[(PALETTE_ORDER.indexOf(PALETTE) + 1) % PALETTE_ORDER.length];
+paletteBtn.textContent = PALETTES[nextPalette].name;
 paletteBtn.addEventListener("click", () => {
   const q = new URLSearchParams(location.search);
-  if (PALETTE === "rainbow") q.delete("palette");
-  else q.set("palette", "rainbow");
+  if (nextPalette === "white") q.delete("palette");
+  else q.set("palette", nextPalette);
   location.search = q.size ? `?${q}` : "";
 });
 
@@ -333,7 +336,7 @@ function drawOverlay() {
     ctx.fillText(line1, tx, ey - 4);
     ctx.font = `400 7.5px ${MONO}`;
     ctx.globalAlpha = alpha * 0.55;
-    ctx.fillStyle = "rgb(225,232,245)";
+    ctx.fillStyle = detailCss();
     ctx.fillText(line2, tx, ey + 9);
   }
   if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";

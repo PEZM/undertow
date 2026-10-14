@@ -46,6 +46,8 @@ header {
   pointer-events: none;
 }
 
+h1, #status { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.4); }
+
 h1 {
   margin: 0;
   font: italic 400 34px/1 "Instrument Serif", Georgia, serif;
