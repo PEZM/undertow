@@ -23,7 +23,7 @@ try {
 // Two ways to see the same field: the particle ocean, or an endless pelt of fur.
 // The fur is the default; ?view=ocean opens on the ocean; ?hairs=600000 grows more (or fewer) strands.
 const viewBtn = document.getElementById("view");
-const CAMERAS = { fur: { yaw: 0, el: 0.92, dist: 3.4 }, ocean: { yaw: 0, el: 0.3, dist: 2.4 } };
+const CAMERAS = { fur: { yaw: 0, el: 0.82, dist: 3.4 }, ocean: { yaw: 0, el: 0.3, dist: 2.4 } };
 const FUR_FIELD = { x: 8, y: 8 }; // the fur's listener field reaches far out toward the horizon
 let fur = null;
 function setView(name) {
@@ -38,6 +38,8 @@ function setView(name) {
   ocean.surface = name === "fur" ? fur : null;
   if (ocean.surface) ocean.setField(FUR_FIELD, Math.min(innerWidth, innerHeight) < 600 ? 384 : 512, 0.12);
   else ocean.setField(BOUNDS);
+  // On the fur, ripples keep rolling outward well past the edges of the screen.
+  [ocean.rippleLife, ocean.rippleSpeed] = ocean.surface ? [25, 0.36] : [8, 0.24];
   // Each view opens on its own camera: the fur seen from high above, the ocean from near the water.
   Object.assign(ocean.view, CAMERAS[name]);
   viewBtn.textContent = name === "fur" ? "Ocean" : "Fur";

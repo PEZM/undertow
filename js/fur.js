@@ -154,8 +154,9 @@ void main() {
     float b = exp(-front * front * 6.0) * R.w * smoothstep(0.0, 2.0, age) * (1.0 - age / 30.0) * (0.35 + 0.65 / (1.0 + dist * 0.5));
     push += d / dist * b;
     lift += b * 0.15;
-    washC += uRC[j] * b;
-    wash += b;
+    float tint = b * exp(-age * 0.9); // the colour fades within seconds; the wave rolls on
+    washC += uRC[j] * tint;
+    wash += tint;
   }
 
   // Wind over the pelt: gusts rolling across it in long waves, combed the way everyone's

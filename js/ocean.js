@@ -8,7 +8,7 @@
 
 export const BOUNDS = { x: 2.8, y: 2.4 }; // world half-extents of the water
 export const MAXL = 128; // listeners
-export const MAXR = 16;          // ripples alive at once
+export const MAXR = 24;          // ripples alive at once
 const FIELD = 256;        // field texture resolution
 const OCEAN = [0.05, 0.13, 0.27];
 
@@ -33,7 +33,8 @@ const int MAXL = ${MAXL};
 const int MAXR = ${MAXR};
 uniform sampler2D uListeners; // row 0: xy, energy, spin. row 1: rgb, loved. row 2: style current xy, chop, song-start surge
 uniform int uCount;
-uniform float uGrow;          // far from the middle, a current's footprint grows (so it still reads)
+uniform float uGrow;
+uniform vec2 uRipple;         // how long a ripple lives, and how fast it travels          // far from the middle, a current's footprint grows (so it still reads)
 uniform vec4 uR[MAXR];        // ripple: xy, birth time, strength
 uniform vec3 uRC[MAXR];
 in vec2 vUv;
@@ -75,14 +76,18 @@ void main() {
   for (int i = 0; i < MAXR; i++) {
     vec4 r = uR[i];
     float a = uTime - r.z;
-    if (r.w <= 0.0 || a < 0.0 || a > 8.0) continue;
+    if (r.w <= 0.0 || a < 0.0 || a > uRipple.x) continue;
     vec2 d = p - r.xy;
     float dist = length(d) + 1e-4;
-    float b = exp(-pow((dist - a * 0.24) * 16.0, 2.0)) * r.w * (1.0 - a / 8.0);
+    // The ring softens and widens as it travels, like a real wave spreading out.
+    float b = exp(-pow((dist - a * uRipple.y) * 16.0 / (1.0 + a * 0.15 * step(9.0, uRipple.x)), 2.0)) * r.w * (1.0 - a / uRipple.x);
     vel += d / dist * b * 0.35;
     h += 0.09 * b;
-    pig += uRC[i] * b * 3.0;
-    w += b * 3.0;
+    // Long-travelling ripples keep their motion but give up their colour within a few
+    // seconds, or one wave would dye the whole field.
+    float tint = b * 3.0 * mix(1.0, exp(-a * 0.9), step(9.0, uRipple.x));
+    pig += uRC[i] * tint;
+    w += tint;
   }
 
   // Crowds saturate instead of stacking: a hundred listeners make a lively sea, not a mountain.
@@ -337,6 +342,8 @@ export class Ocean {
     this.bounds = { ...BOUNDS };  // the water the listener field covers
     this.fieldSize = FIELD;
     this.grow = 0;
+    this.rippleLife = 8;      // seconds
+    this.rippleSpeed = 0.24;  // water units a second
     this.view = { yaw: 0, el: 0.3, dist: 2.4 };
     this.W = Math.min(innerWidth, innerHeight) < 600 ? 256 : 512;
     this.N = this.W * this.W;
@@ -525,6 +532,7 @@ export class Ocean {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fieldFb);
     gl.viewport(0, 0, this.fieldSize, this.fieldSize);
     gl.uniform1f(f.u.uGrow, this.grow);
+    gl.uniform2f(f.u.uRipple, this.rippleLife, this.rippleSpeed);
     this.common(f);
     this.bind(f, "uListeners", 0, this.listeners);
     gl.uniform1i(f.u.uCount, this.count);
