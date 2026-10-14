@@ -8,7 +8,7 @@ WebGL2, inspired by Refik Anadol's data paintings). Two feeds can drive it.
 **Wikipedia (the default)** streams every article edit, live, from Wikimedia's public
 EventStreams feed: no key, no sign-up. Each language edition is a current:
 
-- **Energy:** a language's edit rate. English and Wikidata-sized wikis roar, small ones ripple.
+- **Energy:** a language's edit rate. the big Wikipedias roar, small ones ripple.
 - **Colour:** the articles it is editing most, each title with its own colour.
 - **Families:** Romance, Slavic, Germanic, East Asian and the other language families each have a
   compass direction, so related languages drift together as one river. Bot edits pull toward
