@@ -11,8 +11,8 @@ export const PALETTES = {
     tip: 0,
     punch: 0,
     exposure: 2.4,      // white needs plenty of light, or it reads as grey
-    skin: 0.6,          // pale skin between the hairs, so gaps don't darken it
-    roots: 0.3,         // and roots that stay fairly light, keeping a little depth
+    skin: 0.72,         // pale skin between the hairs, so gaps don't darken it
+    roots: 0.38,        // and roots that stay fairly light, keeping a little depth
     ink: [0.08, 0.08, 0.1], // labels in near-black, readable on white
     marks: 0,           // no markings: the only shading is light on the hair itself
     haze: [0.05, 0.05, 0.06],
