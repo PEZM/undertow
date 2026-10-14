@@ -1,10 +1,24 @@
 # Undertow
 
-Everyone's listening as one living ocean.
+Live activity from around the world as one living ocean, or an endless pelt of fur.
 
 Hundreds of thousands of particles drift across a swelling, moonlit sea (GPU-simulated in
-WebGL2, inspired by Refik Anadol's data paintings). Each listener is an unnamed current, and
-the currents are driven by the music:
+WebGL2, inspired by Refik Anadol's data paintings). Two feeds can drive it.
+
+**Wikipedia (the default)** streams every article edit, live, from Wikimedia's public
+EventStreams feed: no key, no sign-up. Each language edition is a current:
+
+- **Energy:** a language's edit rate. English and Wikidata-sized wikis roar, small ones ripple.
+- **Colour:** the articles it is editing most, each title with its own colour.
+- **Families:** Romance, Slavic, Germanic, East Asian and the other language families each have a
+  compass direction, so related languages drift together as one river. Bot edits pull toward
+  their own direction and roughen the water.
+- **New articles and big edits** send a wave out; a new article makes its patch glow.
+- **The same article edited in two languages at once** (usually news) brings them together to orbit.
+- The page replays the last five minutes on load, so it starts full. Editors' names are never shown.
+
+**Music** (`?feed=music`, or the button top right) uses people's Last.fm and ListenBrainz
+listening instead. Each listener is an unnamed current, and the currents are driven by the music:
 
 - **Styles:** every genre family (electronic, ambient, jazz, soul, hip-hop, rock, indie, folk,
   pop, world, classical) has a compass direction and a roughness. Someone's recent genres set
@@ -42,14 +56,15 @@ Then open http://localhost:8000. With no participants configured it shows demo d
 
 URL options:
 
-- `?demo`: force demo data
+- `?feed=music`: music instead of Wikipedia (with no participants configured it shows demo data)
+- `?demo`: music with demo data
 - `?listeners=40`: how many demo listeners (default 100, up to 128)
 - `?view=fur`: open on the fur
 - `?hairs=600000`: how many strands to grow (default 420,000, 250,000 on phones)
 - `?users=lb:alice,lfm:bob`: try people without editing any file (`lb` = ListenBrainz, `lfm` = Last.fm)
 
-Drag to orbit, scroll to zoom (closer in the fur), tap the water to ripple it. Hover a current to see whose it is, what they're
-playing and their closest taste match.
+Drag to orbit, scroll to zoom (closer in the fur), tap the water to ripple it. Hover a current to see which language or listener it is,
+what it's on right now and what it's most alike.
 **Fullscreen** plus a few idle seconds (the UI fades away) gives you exhibition mode. **Save PNG** exports the frame.
 
 ## Add people
@@ -85,6 +100,7 @@ Only add people who have said yes. A username in this file makes their recent li
 | `js/ocean.js` | WebGL2 ocean: the listener field, particles, swell, ripples, trails |
 | `js/fur.js` | WebGL2 fur: spring-driven strands grown from the same listener field |
 | `js/currents.js` | Listeners as currents: styles, likes, surges, similarity, sync |
+| `js/wiki.js` | Live Wikipedia edits: languages as currents, families as styles |
 | `js/sources.js` | Plays and likes from Last.fm / ListenBrainz, genres from Last.fm / MusicBrainz |
 | `js/demo.js` | Made-up listeners for when nobody is configured |
 | `js/main.js` | Loads people, polls every minute, labels, hover, export |

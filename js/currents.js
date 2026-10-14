@@ -1,4 +1,5 @@
-// Listeners as currents on the water, driven by what they play.
+// Listeners as currents on the water, driven by what they play. (The same machinery runs
+// any feed: for Wikipedia, each language is a current and its edits are its "plays".)
 //
 // - Style: every genre family has a compass direction and a roughness. A listener's
 //   recent genres decide which way their water flows and how choppy it is, so people
@@ -8,9 +9,6 @@
 // - Song starts: each new track surges the current for a few seconds.
 // - Likes: a loved track makes the water glow and the spray rise.
 // - In sync: two people on the same artist at the same time meet and orbit.
-
-const RECENT = 6 * 3600;     // listening that shapes someone's currents right now
-const HALF_LIFE = 3600;      // older plays count for less
 
 export const STYLES = [
   { name: "electronic", chop: 0.9, words: ["electronic", "electronica", "house", "techno", "idm", "dance", "dubstep", "trance", "edm", "electro", "drum and bass", "breakbeat", "uk garage", "synthwave"] },
@@ -25,15 +23,18 @@ export const STYLES = [
   { name: "world", chop: 0.55, words: ["mpb", "tropicalia", "flamenco", "latin", "bossa nova", "reggae", "afrobeats", "cumbia", "world", "brazilian", "dub", "salsa"] },
   { name: "classical", chop: 0.2, words: ["classical", "modern classical", "contemporary classical", "opera", "minimalism", "experimental", "neoclassical", "composer", "orchestral"] },
 ];
-STYLES.forEach((s, i) => { s.angle = (i / STYLES.length) * Math.PI * 2; });
-const STYLE_OF = new Map(STYLES.flatMap(s => s.words.map(w => [w, s])));
 
-export function styleOf(tags) {
-  for (const t of tags ?? []) {
-    const s = STYLE_OF.get(t);
-    if (s) return s;
-  }
-  return null;
+// Gives every style a compass direction, and returns a lookup from tags to the first style they match.
+export function styleLookup(styles) {
+  styles.forEach((s, i) => { s.angle = (i / styles.length) * Math.PI * 2; });
+  const of = new Map(styles.flatMap(s => s.words.map(w => [w, s])));
+  return tags => {
+    for (const t of tags ?? []) {
+      const s = of.get(t);
+      if (s) return s;
+    }
+    return null;
+  };
 }
 
 export function artistKey(name) {
@@ -66,12 +67,24 @@ function cosine(a, b) {
 
 const QUIET = [0.2, 0.3, 0.5];
 
+// How a feed's activity becomes currents. Music moves over hours; other feeds can be quicker.
+const MUSIC = {
+  styles: STYLES,
+  recent: 6 * 3600,     // listening that shapes someone's currents right now
+  halfLife: 3600,       // older plays count for less
+  sharedMinutes: 45,    // two people on the same artist this close together meet and orbit
+  syncRecent: 720,      // ... as long as both were on it in the last 12 minutes
+  syncHalfLife: 900,
+  energy: activity => activity * 0.18,
+};
+
 export class Currents {
-  constructor() {
+  constructor(options = {}) {
+    Object.assign(this, MUSIC, options);
+    this.styleOf = styleLookup(this.styles);
     this.state = new Map();
     this.bonds = [];
     this.similarity = new Map();
-    this.sharedMinutes = 45;
     this.tagsFor = () => null;
     this.primed = false;
     this.bondKeys = new Set();
@@ -111,17 +124,17 @@ export class Currents {
       s.last = p.listens.reduce((a, l) => (!a || l.ts > a.ts ? l : a), null);
       for (const l of p.listens) {
         const age = now - l.ts;
-        if (age > RECENT) continue;
-        const w = Math.pow(0.5, age / HALF_LIFE) + (l.nowPlaying ? 1.5 : 0);
+        if (age > this.recent) continue;
+        const w = Math.pow(0.5, age / this.halfLife) + (l.nowPlaying ? 1.5 : 0);
         activity += w;
         const k = artistKey(l.artist);
         (times.get(k) ?? times.set(k, []).get(k)).push(l.ts);
         const a = artists.get(k) ?? artists.set(k, { artist: l.artist, w: 0 }).get(k);
         a.w += w;
         map.set("a:" + k, (map.get("a:" + k) ?? 0) + w);
-        const tags = this.tagsFor(l.artist) ?? [];
+        const tags = this.tagsFor(l.artist, l) ?? [];
         for (const t of tags) map.set("t:" + t, (map.get("t:" + t) ?? 0) + w * 0.6);
-        const st = styleOf(tags);
+        const st = this.styleOf(tags);
         if (st) {
           dx += Math.cos(st.angle) * w;
           dy += Math.sin(st.angle) * w;
@@ -132,7 +145,7 @@ export class Currents {
         }
       }
       s.palette = [...artists.values()].sort((a, b) => b.w - a.w).slice(0, 4);
-      s.target = 0.12 + Math.min(1.25, activity * 0.18 + (s.playing ? 0.45 : 0));
+      s.target = 0.12 + Math.min(1.25, this.energy(activity) + (s.playing ? 0.45 : 0));
       s.drift = cw ? [dx / cw, dy / cw] : [0, 0]; // shorter when someone's styles pull different ways
       s.chop = cw ? chop / cw : 0.5;
       s.styles = [...styleW.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
@@ -158,8 +171,8 @@ export class Currents {
         if (!ys) continue;
         for (const x of xs) for (const y of ys) {
           if (Math.abs(x - y) > win) continue;
-          if (now - Math.min(x, y) > 720) continue; // both on it in the last 12 minutes
-          const strength = Math.pow(0.5, (now - Math.min(x, y)) / 900);
+          if (now - Math.min(x, y) > this.syncRecent) continue; // both on it lately
+          const strength = Math.pow(0.5, (now - Math.min(x, y)) / this.syncHalfLife);
           if (!best || strength > best.strength) {
             const artist = this.stateFor(a).palette.find(p => artistKey(p.artist) === k)?.artist ?? k;
             best = { a, b, artist, hue: artistHue(artist), strength, key: `${a.name}|${b.name}|${k}` };

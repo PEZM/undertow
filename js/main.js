@@ -2,8 +2,9 @@ import { CONFIG } from "../config.js";
 import { fetchListens, artistTags } from "./sources.js";
 import { Ocean } from "./ocean.js";
 import { Fur } from "./fur.js";
-import { Currents, artistHue, hsl, styleOf } from "./currents.js";
+import { Currents, artistHue, hsl } from "./currents.js";
 import { makeDemo, demoTick, DEMO_TAGS } from "./demo.js";
+import { WikiFeed, WIKI_TIMING, wikiTags } from "./wiki.js";
 
 const glCanvas = document.getElementById("ocean");
 const overlay = document.getElementById("overlay");
@@ -43,12 +44,48 @@ function setView(name) {
 setView(new URLSearchParams(location.search).get("view") === "fur" ? "fur" : "ocean");
 viewBtn.addEventListener("click", () => setView(ocean.surface ? "ocean" : "fur"));
 
-const currents = new Currents();
-currents.sharedMinutes = CONFIG.sharedMinutes;
+// What drives the water: live Wikipedia edits (the default), or people's music (?feed=music).
+const params = new URLSearchParams(location.search);
+const FEED = params.get("feed") === "music" || params.has("users") || params.has("demo") ? "music" : "wiki";
+const feedBtn = document.getElementById("feed");
+feedBtn.textContent = FEED === "wiki" ? "Music" : "Wikipedia";
+feedBtn.addEventListener("click", () => {
+  const q = new URLSearchParams(location.search);
+  for (const k of ["feed", "users", "demo", "listeners"]) q.delete(k);
+  if (FEED === "wiki") q.set("feed", "music");
+  location.search = q.size ? `?${q}` : "";
+});
+
+// The words for each feed: a current is a listener or a language, and so on.
+const WORDS = FEED === "wiki" ? {
+  who: n => `${n} language${n === 1 ? "" : "s"}`,
+  active: n => `${n} editing now`,
+  bonds: n => `${n} article${n === 1 ? "" : "s"} shared`,
+  now: "editing now",
+  quiet: "quiet lately",
+  lately: "lately",
+  sync: (other, title) => `also editing ${title} in ${other}`,
+  kin: "most alike",
+  bondDetail: () => "2 languages at once",
+} : {
+  who: n => `${n} listener${n === 1 ? "" : "s"}`,
+  active: n => `${n} playing now`,
+  bonds: n => `${n} in sync`,
+  now: "playing now",
+  quiet: "quiet lately",
+  lately: "lately",
+  sync: (other, artist) => `in sync with ${other} on ${artist}`,
+  kin: "closest taste",
+  bondDetail: artist => ["sync ×2", styleName(artist)].filter(Boolean).join(" · "),
+};
+
+const currents = new Currents(FEED === "wiki" ? WIKI_TIMING : { sharedMinutes: CONFIG.sharedMinutes });
 
 let people = [];   // everyone we were asked to show
 let shown = [];    // the ones whose listening loaded
 let demo = false;
+let wiki = null;   // the Wikipedia feed, when that's what drives the water
+let lastWave = 0;
 let updatedAt = null;
 let tags = [];     // now and then one particle lights up and names its artist
 let lastTagAt = -Infinity, tagGap = 5;
@@ -90,26 +127,29 @@ function tag(state, artist, detail, hue, priority = false) {
   tags.push({ state, artist: artist.toUpperCase(), detail, hue, born: ocean.time, angle: Math.random() * Math.PI * 2, radius: 0.06 + Math.random() * 0.08 });
 }
 
-function styleName(artist) {
-  return styleOf(currents.tagsFor(artist))?.name ?? null;
+function styleName(artist, listen) {
+  return currents.styleOf(currents.tagsFor(artist, listen))?.name ?? null;
 }
 
-// A song starts: the current surges and a ring wave rolls out.
+// A song starts (or an article changes): the current surges and a ring wave rolls out.
 function splash(person, listen) {
   const s = currents.stateFor(person), hue = artistHue(listen.artist);
   currents.surge(person);
   ocean.ripple(s.x, s.y, hsl(hue, 0.9, 0.65), listen.loved ? 1.5 : 1.1);
-  const style = styleName(listen.artist);
-  const detail = [style, listen.loved ? "♥ loved" : "new track"].filter(Boolean).join(" · ");
-  tag(s, listen.artist, detail, hue, !!listen.loved);
+  const detail = FEED === "wiki"
+    ? [person.name, listen.track].join(" · ")
+    : [styleName(listen.artist, listen), listen.loved ? "♥ loved" : "new track"].filter(Boolean).join(" · ");
+  const title = listen.artist.length > 44 ? listen.artist.slice(0, 42) + "…" : listen.artist;
+  tag(s, title, detail, hue, !!listen.loved);
 }
 
 function analyse() {
+  if (wiki) shown = people = wiki.people(nowSec());
   for (const bd of currents.analyse(shown, nowSec())) {
     const a = currents.stateFor(bd.a), b = currents.stateFor(bd.b);
     ocean.ripple((a.x + b.x) / 2, (a.y + b.y) / 2, hsl(bd.hue, 0.9, 0.7), 1.6);
     tag({ get x() { return (a.x + b.x) / 2; }, get y() { return (a.y + b.y) / 2; }, spin: a.spin },
-      bd.artist, ["sync ×2", styleName(bd.artist)].filter(Boolean).join(" · "), bd.hue, true);
+      bd.artist, WORDS.bondDetail(bd.artist), bd.hue, true);
   }
   updateStatus();
 }
@@ -145,8 +185,13 @@ async function refresh() {
 
 function updateStatus() {
   const playing = shown.filter(p => p.listens.some(l => l.nowPlaying)).length;
-  const parts = [`${shown.length} listener${shown.length === 1 ? "" : "s"}`, `${playing} playing now`];
-  if (currents.bonds.length) parts.push(`${currents.bonds.length} in sync`);
+  const parts = [WORDS.who(shown.length), WORDS.active(playing)];
+  if (currents.bonds.length) parts.push(WORDS.bonds(currents.bonds.length));
+  if (wiki) {
+    parts.push(wiki.error ?? `${wiki.perMinute.toLocaleString("en")} edits a minute · live from Wikipedia`);
+    statusEl.textContent = parts.join(" · ");
+    return;
+  }
   if (demo) parts.push("demo data");
   else if (updatedAt) parts.push(`updated ${updatedAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`);
   statusEl.textContent = parts.join(" · ");
@@ -176,7 +221,24 @@ function startDemo() {
   })();
 }
 
+// Wikipedia: every article edit flows into its language's current. Only some make a wave:
+// new articles and big edits, and never more than one every couple of seconds, or one per
+// language every quarter of a minute, so a busy wiki can't drown the rest.
+function startWiki() {
+  currents.tagsFor = wikiTags;
+  wiki = new WikiFeed((p, edit, replayed) => {
+    if (replayed || edit.bot || !(edit.isNew || Math.abs(edit.delta) >= 1500)) return;
+    const t = performance.now();
+    if (t - lastWave < 2000 || t - (p.lastWave ?? -Infinity) < 15000 || !shown.includes(p)) return;
+    lastWave = p.lastWave = t;
+    splash(p, edit);
+  });
+  wiki.start();
+  statusEl.textContent = "Joining Wikipedia…";
+}
+
 async function start() {
+  if (FEED === "wiki") return startWiki();
   const list = await loadParticipants();
   if (!list) return startDemo();
   currents.tagsFor = artistTags;
@@ -291,14 +353,14 @@ function showTip(e) {
   name.textContent = p.name;
   tip.append(name);
   const l = s.playing ?? s.last;
-  line(l ? `${l.artist}${l.track ? " — " + l.track : ""} · ${l.nowPlaying ? "playing now" : ago(l.ts)}` : "quiet lately");
-  if (s.palette.length > 1) line(`lately: ${s.palette.map(a => a.artist).join(", ")}`, "muted");
+  line(l ? `${l.artist}${l.track ? " — " + l.track : ""} · ${l.nowPlaying ? WORDS.now : ago(l.ts)}` : WORDS.quiet);
+  if (s.palette.length > 1) line(`${WORDS.lately}: ${s.palette.map(a => a.artist).join(", ")}`, "muted");
   if (s.styles.length) line(`currents: ${s.styles.slice(0, 3).join(" / ")}${s.lovedTarget ? " · ♥ loved" : ""}`, "muted");
   for (const bd of currents.bonds.filter(b => b.a === p || b.b === p)) {
-    line(`in sync with ${(bd.a === p ? bd.b : bd.a).name} on ${bd.artist}`, "shared");
+    line(WORDS.sync((bd.a === p ? bd.b : bd.a).name, bd.artist), "shared");
   }
   const kin = shown.filter(q => q !== p).map(q => [q, currents.similarityOf(p, q)]).sort((a, b) => b[1] - a[1])[0];
-  if (kin && kin[1] > 0.15) line(`closest taste: ${kin[0].name} (${Math.round(kin[1] * 100)}%)`, "muted");
+  if (kin && kin[1] > 0.15) line(`${WORDS.kin}: ${kin[0].name} (${Math.round(kin[1] * 100)}%)`, "muted");
   tip.hidden = false;
   const x = Math.min(e.clientX + 16, innerWidth - tip.offsetWidth - 8);
   const y = e.clientY + 20 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 14 : e.clientY + 20;
