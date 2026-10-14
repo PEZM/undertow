@@ -182,7 +182,7 @@ void main() {
 
   // Calm styles make long glassy swirls; energetic ones break the water into fine chop.
   vec2 v = curl(vec3(p * 0.9, uTime * 0.035)) * 0.04 * (0.6 + 0.8 * chop)
-         + curl(vec3(p * 2.8 + 7.0, uTime * (0.03 + 0.08 * chop))) * 0.035 * chop
+         + curl(vec3(p * 2.8 + 7.0, uTime * 0.07)) * 0.035 * chop
          + vec2(0.01, 0.003)
          + flow.xy;
 

@@ -103,11 +103,14 @@ ${HUE}
 ${HILLS_GLSL}
 uniform sampler2D uState;  // lean xy, lean velocity xy
 uniform sampler2D uDye;    // dye rgb, amount
+uniform sampler2D uLook;   // last frame's colour and length
 uniform sampler2D uFlow;
 uniform sampler2D uPaint;
 uniform sampler2D uMood;
 uniform float uDt;
-uniform vec2 uWind;       // everyone's styles together: which way the whole pelt is combed
+uniform vec2 uDir;        // everyone's styles together: which way the whole pelt is combed
+uniform float uComb;      // ... how firmly
+uniform vec2 uGust;       // ... and how far the gusts have travelled with it
 uniform float uChop;      // ... how bristly it is
 uniform float uActivity;  // ... and how hard the wind blows
 uniform vec4 uR[${MAXR}];         // song starts: xy, birth time, strength
@@ -148,7 +151,7 @@ void main() {
     vec2 d = p - R.xy;
     float dist = length(d) + 1e-3;
     float front = dist - age * 0.7;
-    float b = exp(-front * front * 6.0) * R.w * (1.0 - age / 30.0) * (0.35 + 0.65 / (1.0 + dist * 0.5));
+    float b = exp(-front * front * 6.0) * R.w * smoothstep(0.0, 2.0, age) * (1.0 - age / 30.0) * (0.35 + 0.65 / (1.0 + dist * 0.5));
     push += d / dist * b;
     lift += b * 0.15;
     washC += uRC[j] * b;
@@ -158,9 +161,11 @@ void main() {
   // Wind over the pelt: gusts rolling across it in long waves, combed the way everyone's
   // styles pull together and blowing harder the more people are listening, a curl-noise
   // breeze, the song-start waves, and the listeners' own currents combing whorls into it.
-  vec2 dir = normalize(vec2(0.871, 0.49) * 0.3 + uWind + 1e-4);
-  float gust = snoise(vec3(dot(p, dir) * 0.6 - uTime * (0.35 + 0.3 * uActivity), dot(p, vec2(-dir.y, dir.x)) * 0.25, uTime * 0.04));
-  vec2 wind = dir * (0.12 + 0.5 * length(uWind) + (0.25 + 0.45 * uActivity) * gust)
+  // The gust pattern drifts downwind by a distance integrated frame by frame, so when the
+  // weather changes the waves speed up or turn gradually instead of jumping.
+  vec2 g = p - uGust;
+  float gust = 0.65 * snoise(vec3(g * 0.4, uTime * 0.05)) + 0.35 * snoise(vec3(g * 0.9 + 4.0, uTime * 0.08));
+  vec2 wind = uDir * (0.12 + 0.5 * uComb + (0.25 + 0.45 * uActivity) * gust)
             + curl(vec3(p * 0.35, uTime * 0.03)) * 0.06
             + push * 1.2
             + flow.xy * in_ * 5.0
@@ -193,6 +198,9 @@ void main() {
 
   float len = mix(0.07, 0.11, r1) * mix(1.3, 0.72, chop) * (1.0 + 0.9 * min(lift, 1.0) + 0.4 * glow);
   len = max(len, sp * 3.0);
+  // Tufts rise and settle over a second or so rather than snapping when a song starts.
+  float was = texelFetch(uLook, ij, 0).w;
+  if (was > 0.0) len = mix(was, len, 1.0 - exp(-uDt * 1.2));
   // With fewer strands (phones) they stay as fine as on a big screen, just a little sparser.
   oState = vec4(lean, vel);
   oDye = vec4(dye, amount);
@@ -372,11 +380,11 @@ export class Fur {
     const tex = () => ocean.texture(this.W, this.W, gl.RGBA32F, gl.FLOAT, null, gl.NEAREST);
     this.state = [tex(), tex()];
     this.dye = [tex(), tex()];
-    this.look = tex();
+    this.look = [tex(), tex()];
     this.more = tex();
-    this.fb = [0, 1].map(i => ocean.framebuffer(this.state[i], this.dye[i], this.look, this.more));
+    this.fb = [0, 1].map(i => ocean.framebuffer(this.state[i], this.dye[i], this.look[i], this.more));
     this.cur = 0;
-    this.weather = { wind: [0, 0], chop: 0.5, activity: 0.5 };
+    this.weather = { wind: [0, 0], chop: 0.5, activity: 0.5, gust: [0, 0] };
     this.height = hills; // the ocean places labels on this ground instead of its swell
     this.samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
   }
@@ -421,6 +429,7 @@ export class Fur {
     gl.uniform1f(s.u.uDt, Math.max(dt, 1e-4));
     o.bind(s, "uState", 0, this.state[this.cur]);
     o.bind(s, "uDye", 1, this.dye[this.cur]);
+    o.bind(s, "uLook", 5, this.look[this.cur]);
     o.bind(s, "uFlow", 2, o.fields[0]);
     o.bind(s, "uPaint", 3, o.fields[1]);
     o.bind(s, "uMood", 4, o.fields[2]);
@@ -429,7 +438,13 @@ export class Fur {
     w.wind = w.wind.map((v, i) => v + (m.wind[i] - v) * k);
     w.chop += (m.chop - w.chop) * k;
     w.activity += (m.activity - w.activity) * k;
-    gl.uniform2fv(s.u.uWind, w.wind);
+    const base = [0.871 * 0.3 + w.wind[0], 0.49 * 0.3 + w.wind[1]], len = Math.hypot(...base) || 1;
+    const dir = [base[0] / len, base[1] / len];
+    const speed = 0.35 + 0.3 * Math.min(1.5, w.activity);
+    w.gust = [w.gust[0] + dir[0] * speed * dt, w.gust[1] + dir[1] * speed * dt];
+    gl.uniform2fv(s.u.uDir, dir);
+    gl.uniform1f(s.u.uComb, Math.hypot(...w.wind));
+    gl.uniform2fv(s.u.uGust, w.gust);
     gl.uniform1f(s.u.uChop, w.chop);
     gl.uniform1f(s.u.uActivity, Math.min(1.5, w.activity));
     gl.uniform4fv(s.u.uR, o.R);
@@ -466,7 +481,7 @@ export class Fur {
     o.common(hair);
     gl.uniform1i(hair.u.uW, this.W);
     o.bind(hair, "uState", 0, this.state[this.cur]);
-    o.bind(hair, "uLook", 1, this.look);
+    o.bind(hair, "uLook", 1, this.look[this.cur]);
     o.bind(hair, "uMore", 2, this.more);
     gl.uniformMatrix4fv(hair.u.uViewProj, false, o.vp);
     gl.uniform2f(hair.u.uRes, this.w, this.h);
