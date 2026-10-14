@@ -23,7 +23,7 @@ try {
 // Two ways to see the same field: the particle ocean, or an endless pelt of fur.
 // The fur is the default; ?view=ocean opens on the ocean; ?hairs=600000 grows more (or fewer) strands.
 const viewBtn = document.getElementById("view");
-const CAMERAS = { fur: { yaw: 0, el: 1.05, dist: 3.6 }, ocean: { yaw: 0, el: 0.3, dist: 2.4 } };
+const CAMERAS = { fur: { yaw: 0, el: 0.92, dist: 3.4 }, ocean: { yaw: 0, el: 0.3, dist: 2.4 } };
 const FUR_FIELD = { x: 8, y: 8 }; // the fur's listener field reaches far out toward the horizon
 let fur = null;
 function setView(name) {
