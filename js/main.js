@@ -141,14 +141,17 @@ async function loadParticipants() {
 
 // A tag rides one particle in someone's current. Only now and then, so each one is a
 // small event; loved songs and two people meeting get to cut in a little sooner.
+const MAX_TAGS = 6;
 function tag(state, artist, detail, hue, priority = false) {
   const since = ocean.time - lastTagAt;
-  if (since < (priority ? Math.min(tagGap, 4) : tagGap) || tags.length >= 2) return;
+  if (since < (priority ? Math.min(tagGap, 0.8) : tagGap) || tags.length >= MAX_TAGS) return;
   const pr = ocean.project(state.x, state.y);
   if (!pr || pr.sx < 60 || pr.sx > innerWidth - 60 || pr.sy < 110 || pr.sy > innerHeight - 40) return;
   if (tags.some(t => t.artist === artist.toUpperCase())) return;
+  // Never on top of a label that's already showing.
+  if (tags.some(t => t.sx != null && Math.abs(t.sx - pr.sx) < 170 && Math.abs(t.sy - pr.sy) < 40)) return;
   lastTagAt = ocean.time;
-  tagGap = 9 + Math.random() * 7;
+  tagGap = 1 + Math.random() * 1.2;
   const t = { state, artist: artist.toUpperCase(), detail, hue, born: ocean.time, angle: Math.random() * Math.PI * 2, radius: 0.06 + Math.random() * 0.08 };
   // On the fur, the label hangs from one real hair near the current, which turns red.
   if (ocean.surface) t.strand = ocean.surface.nearestStrand(state.x + Math.cos(t.angle) * t.radius, state.y + Math.sin(t.angle) * t.radius);
@@ -164,6 +167,12 @@ function splash(person, listen) {
   const s = currents.stateFor(person), hue = artistHue(listen.artist);
   currents.surge(person);
   ocean.ripple(s.x, s.y, colourOf(hue, 0.65, 0.9), listen.loved ? 1.5 : 1.1);
+  label(person, listen);
+}
+
+// Names what just happened, if there's room for another label.
+function label(person, listen) {
+  const s = currents.stateFor(person), hue = artistHue(listen.artist);
   const detail = FEED === "wiki"
     ? [person.name, listen.track].join(" · ")
     : [styleName(listen.artist, listen), listen.loved ? "♥ loved" : "new track"].filter(Boolean).join(" · ");
@@ -249,17 +258,22 @@ function startDemo() {
   })();
 }
 
-// Wikipedia: every article edit flows into its language's current. Only some make a wave:
-// new articles and big edits, and never more than one every couple of seconds, or one per
-// language every quarter of a minute, so a busy wiki can't drown the rest.
+// Wikipedia: every article edit flows into its language's current. Any edit by a person can
+// be named in a label (as often as there's room for one). Only some make a wave: new
+// articles and big edits, and never more than one a second, or one per language every
+// eight seconds, so a busy wiki can't drown the rest.
 function startWiki() {
   currents.tagsFor = wikiTags;
   wiki = new WikiFeed((p, edit, replayed) => {
-    if (replayed || edit.bot || !(edit.isNew || Math.abs(edit.delta) >= 1500)) return;
+    if (replayed || edit.bot || !shown.includes(p)) return;
     const t = performance.now();
-    if (t - lastWave < 2000 || t - (p.lastWave ?? -Infinity) < 15000 || !shown.includes(p)) return;
-    lastWave = p.lastWave = t;
-    splash(p, edit);
+    const wave = (edit.isNew || Math.abs(edit.delta) >= 800) && t - lastWave >= 1000 && t - (p.lastWave ?? -Infinity) >= 8000;
+    if (wave) {
+      lastWave = p.lastWave = t;
+      splash(p, edit);
+    } else {
+      label(p, edit);
+    }
   });
   wiki.start();
   statusEl.textContent = "Joining Wikipedia…";
@@ -306,6 +320,8 @@ function drawOverlay() {
     if (!pr) continue;
     const alpha = Math.min(1, (TAG_LIFE - age) / 1.2);
     const { sx, sy } = pr;
+    t.sx = sx;
+    t.sy = sy;
 
     // The particle: a bright point with a single ping when it lights up. (On a hair, the red
     // hair itself is the point.)

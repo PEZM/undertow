@@ -237,7 +237,7 @@ uniform mat4 uViewProj;
 uniform vec2 uRes;
 uniform float uPxScale;
 uniform float uTip;   // how far the hue shifts toward the tips
-uniform int uMarked[2]; // strands carrying a label right now: drawn red
+uniform int uMarked[6]; // strands carrying a label right now: drawn red
 out vec3 vCol;
 out vec3 vTan;
 out vec3 vPos;
@@ -269,7 +269,8 @@ void main() {
     return;
   }
 
-  bool marked = i == uMarked[0] || i == uMarked[1];
+  bool marked = false;
+  for (int m = 0; m < 6; m++) marked = marked || i == uMarked[m];
   vec4 S = texelFetch(uState, ij, 0);
   vec4 look = texelFetch(uLook, ij, 0);
   int k = gl_VertexID >> 1;
@@ -597,7 +598,7 @@ export class Fur {
     gl.uniform3fv(hair.u.uHaze, paletteUniform().haze);
     const pal = paletteUniform();
     gl.uniform1f(hair.u.uTip, pal.tip);
-    gl.uniform1iv(hair.u.uMarked, [this.marked[0] ?? -1, this.marked[1] ?? -1]);
+    gl.uniform1iv(hair.u.uMarked, Array.from({ length: 6 }, (_, m) => this.marked[m] ?? -1));
     gl.uniform1f(hair.u.uPunch, pal.punch);
     gl.uniform1f(hair.u.uExposure, pal.exposure);
     gl.uniform1f(hair.u.uRoots, pal.roots);
