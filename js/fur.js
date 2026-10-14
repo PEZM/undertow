@@ -18,7 +18,6 @@ import { COMMON, NOISE, FULL_VS, MAXR, program } from "./ocean.js";
 import { paletteUniform } from "./palette.js";
 
 const SEG = 7;                  // joints per strand
-const MARK_LEN = 2.2;           // a labelled hair stands this much taller than the rest
 const R_IN = 2.4, R_OUT = 18;   // even pelt over the listeners, thinning out to the horizon
 const INNER = 1 / (1 + 2 * Math.log(R_OUT / R_IN)); // share of strands in the even part
 const LIGHT = (v => v.map(x => x / Math.hypot(...v)))([0.25, 0.55, 1.0]);
@@ -280,7 +279,7 @@ void main() {
   float lean = length(S.xy);
   vec2 bd = lean > 1e-4 ? S.xy / lean : vec2(1.0, 0.0);
   float th0 = atan(lean * 1.6 + 0.25);
-  float seg = look.w / float(SEG) * (marked ? ${MARK_LEN.toFixed(2)} : 1.0);
+  float seg = look.w / float(SEG);
   vec3 T = vec3(0.0, 1.0, 0.0);
   for (int j = 0; j < SEG; j++) {
     float tj = (float(j) + 0.5) / float(SEG);
@@ -299,7 +298,6 @@ void main() {
   vec2 sd = (c1.xy / c1.w - c0.xy / c0.w) * uRes;
   sd = dot(sd, sd) > 1e-8 ? normalize(sd) : vec2(0.0, 1.0);
   float wPx = more.z * pow(1.0 - t, 0.7) * uPxScale / c0.w;
-  if (marked) wPx = max(wPx * 1.8, 3.0);
   float wDraw = max(wPx, 0.9);
   c0.xy += vec2(-sd.y, sd.x) * side * wDraw / uRes * c0.w;
   gl_Position = c0;
@@ -467,7 +465,7 @@ export class Fur {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
     const [rx, ry] = this.rootOf(i), frizz = more[0], phase = rnd(Math.imul(i, 3) + 3) * Math.PI * 2;
     const lean = Math.hypot(sx, sy), bx = lean > 1e-4 ? sx / lean : 1, by = lean > 1e-4 ? sy / lean : 0;
-    const th0 = Math.atan(lean * 1.6 + 0.25), seg = look[3] / SEG * MARK_LEN;
+    const th0 = Math.atan(lean * 1.6 + 0.25), seg = look[3] / SEG;
     const p = [rx, more[3], ry];
     for (let j = 0; j < SEG; j++) {
       const tj = (j + 0.5) / SEG;
