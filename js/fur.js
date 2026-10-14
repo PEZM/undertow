@@ -308,7 +308,13 @@ void main() {
   vPos = pos;
   vGlow = more.y;
   vCol = mix(look.rgb, hueShift(look.rgb, uTip) * 1.2 + 0.04, t * t);
-  if (marked) { vCol = vec3(1.0, 0.03, 0.03); vAlpha = 1.0; }
+  // The labelled hair turns red only where hair shows: its root stays the pelt's own colour,
+  // sinking into the shade like its neighbours, so it doesn't look longer than they do.
+  if (marked) {
+    float red = smoothstep(0.3, 0.7, t);
+    vCol = mix(vCol, vec3(1.0, 0.03, 0.03), red);
+    vAlpha = mix(vAlpha, 1.0, red);
+  }
 }`;
 
 const HAIR_FS = `#version 300 es
