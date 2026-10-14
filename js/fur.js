@@ -162,10 +162,14 @@ void main() {
   // styles pull together and blowing harder the more people are listening, a curl-noise
   // breeze, the song-start waves, and the listeners' own currents combing whorls into it.
   // The gust pattern drifts downwind by a distance integrated frame by frame, so when the
-  // weather changes the waves speed up or turn gradually instead of jumping.
+  // weather changes the waves speed up or turn gradually instead of jumping. It also keeps
+  // reshaping as it goes and is warped by a slower field: plain noise slid in a straight
+  // line shows its lattice as a beat every couple of seconds, which the springs pick up.
   vec2 g = p - uGust;
-  float gust = 0.65 * snoise(vec3(g * 0.4, uTime * 0.05)) + 0.35 * snoise(vec3(g * 0.9 + 4.0, uTime * 0.08));
-  vec2 wind = uDir * (0.12 + 0.5 * uComb + (0.25 + 0.45 * uActivity) * gust)
+  vec2 warp = vec2(snoise(vec3(p * 0.12, uTime * 0.03)), snoise(vec3(p * 0.12 + 7.3, uTime * 0.03)));
+  float gust = 0.75 * snoise(vec3(g * 0.22 + warp * 0.8, uTime * 0.09))
+             + 0.25 * snoise(vec3(g * 0.5 + warp * 1.5 + 4.0, uTime * 0.14));
+  vec2 wind = uDir * (0.15 + 0.5 * uComb + (0.18 + 0.3 * uActivity) * gust)
             + curl(vec3(p * 0.35, uTime * 0.03)) * 0.06
             + push * 1.2
             + flow.xy * in_ * 5.0
@@ -174,9 +178,10 @@ void main() {
   float m = length(wind);
   if (m > 1.4) wind *= 1.4 / m;
 
-  // A slightly underdamped spring, so waves overshoot and settle like real fur.
+  // A spring with a little give, so waves overshoot a touch and settle like real fur,
+  // damped enough that it never rings on its own.
   float k = mix(9.0, 24.0, chop) * (1.0 + lift);
-  vec2 vel = S.zw + ((wind - S.xy) * k - S.zw * 0.8 * sqrt(k)) * uDt;
+  vec2 vel = S.zw + ((wind - S.xy) * k - S.zw * 1.4 * sqrt(k)) * uDt;
   vec2 lean = S.xy + vel * uDt;
 
   // Dye: currents colour the hair they pass, and it slowly grows back out.

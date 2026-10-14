@@ -74,6 +74,7 @@ export class Currents {
     this.sharedMinutes = 45;
     this.tagsFor = () => null;
     this.primed = false;
+    this.bondKeys = new Set();
   }
 
   stateFor(p) {
@@ -168,9 +169,11 @@ export class Currents {
       if (best) bonds.push(best);
     }
 
-    const before = new Set(this.bonds.map(b => b.key));
+    // Only pairs that weren't in sync last time are news. Compare against every pair, not
+    // just the 15 that get to orbit, or the rest would "meet" again every two seconds.
+    const fresh = this.primed ? bonds.filter(b => !this.bondKeys.has(b.key)) : [];
+    this.bondKeys = new Set(bonds.map(b => b.key));
     this.bonds = bonds.sort((a, b) => b.strength - a.strength).slice(0, 15);
-    const fresh = this.primed ? bonds.filter(b => !before.has(b.key)) : [];
     this.primed = true;
     return fresh;
   }
