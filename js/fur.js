@@ -150,7 +150,7 @@ void main() {
     float front = dist - age * 0.7;
     float b = exp(-front * front * 6.0) * R.w * (1.0 - age / 30.0) * (0.35 + 0.65 / (1.0 + dist * 0.5));
     push += d / dist * b;
-    lift += b * 0.35;
+    lift += b * 0.15;
     washC += uRC[j] * b;
     wash += b;
   }
@@ -191,7 +191,7 @@ void main() {
   vec3 vivid = clamp(lum + (dye - lum) * 2.4, 0.0, 1.0) * 1.1;
   col = mix(col, vivid, amount * 0.8);
 
-  float len = mix(0.07, 0.11, r1) * mix(1.3, 0.72, chop) * (1.0 + 1.1 * lift + 0.5 * glow);
+  float len = mix(0.07, 0.11, r1) * mix(1.3, 0.72, chop) * (1.0 + 0.9 * min(lift, 1.0) + 0.4 * glow);
   len = max(len, sp * 3.0);
   // With fewer strands (phones) they stay as fine as on a big screen, just a little sparser.
   oState = vec4(lean, vel);
