@@ -462,7 +462,12 @@ export class Ocean {
 
   // World (x, y on the water) to screen pixels.
   project(x, y, lift = 0) {
-    const v = [x, (this.surface?.height ?? swell)(x, y, this.time) + lift, y, 1], m = this.vp, c = [0, 0, 0, 0];
+    return this.projectPoint(x, (this.surface?.height ?? swell)(x, y, this.time) + lift, y);
+  }
+
+  // A point in the world (height in y) to screen pixels.
+  projectPoint(x, h, y) {
+    const v = [x, h, y, 1], m = this.vp, c = [0, 0, 0, 0];
     for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) c[r] += m[k * 4 + r] * v[k];
     if (c[3] <= 0) return null;
     const nx = c[0] / c[3], ny = c[1] / c[3];

@@ -149,7 +149,10 @@ function tag(state, artist, detail, hue, priority = false) {
   if (tags.some(t => t.artist === artist.toUpperCase())) return;
   lastTagAt = ocean.time;
   tagGap = 9 + Math.random() * 7;
-  tags.push({ state, artist: artist.toUpperCase(), detail, hue, born: ocean.time, angle: Math.random() * Math.PI * 2, radius: 0.06 + Math.random() * 0.08 });
+  const t = { state, artist: artist.toUpperCase(), detail, hue, born: ocean.time, angle: Math.random() * Math.PI * 2, radius: 0.06 + Math.random() * 0.08 };
+  // On the fur, the label hangs from one real hair near the current, which turns red.
+  if (ocean.surface) t.strand = ocean.surface.nearestStrand(state.x + Math.cos(t.angle) * t.radius, state.y + Math.sin(t.angle) * t.radius);
+  tags.push(t);
 }
 
 function styleName(artist, listen) {
@@ -287,11 +290,18 @@ function drawOverlay() {
   ctx.clearRect(0, 0, w, h);
 
   tags = tags.filter(t => ocean.time - t.born < TAG_LIFE);
+  const pelt = ocean.surface;
+  if (pelt) pelt.marked = tags.filter(t => t.strand >= 0).map(t => t.strand);
   for (const t of tags) {
     const age = ocean.time - t.born;
-    // The tagged particle circles in its current like any other.
-    const a = t.angle + age * 0.5 * (t.state.spin ?? 1);
-    const pr = ocean.project(t.state.x + Math.cos(a) * t.radius, t.state.y + Math.sin(a) * t.radius, 0.1 + age * 0.012);
+    let pr;
+    if (pelt && t.strand >= 0) {
+      pr = ocean.projectPoint(...pelt.tipOf(t.strand)); // hanging from the tip of its red hair
+    } else {
+      // The tagged particle circles in its current like any other.
+      const a = t.angle + age * 0.5 * (t.state.spin ?? 1);
+      pr = ocean.project(t.state.x + Math.cos(a) * t.radius, t.state.y + Math.sin(a) * t.radius, 0.1 + age * 0.012);
+    }
     if (!pr) continue;
     const alpha = Math.min(1, (TAG_LIFE - age) / 1.2);
     const { sx, sy } = pr;

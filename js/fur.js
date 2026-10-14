@@ -18,6 +18,7 @@ import { COMMON, NOISE, FULL_VS, MAXR, program } from "./ocean.js";
 import { paletteUniform } from "./palette.js";
 
 const SEG = 7;                  // joints per strand
+const MARK_LEN = 2.2;           // a labelled hair stands this much taller than the rest
 const R_IN = 2.4, R_OUT = 18;   // even pelt over the listeners, thinning out to the horizon
 const INNER = 1 / (1 + 2 * Math.log(R_OUT / R_IN)); // share of strands in the even part
 const LIGHT = (v => v.map(x => x / Math.hypot(...v)))([0.25, 0.55, 1.0]);
@@ -237,6 +238,7 @@ uniform mat4 uViewProj;
 uniform vec2 uRes;
 uniform float uPxScale;
 uniform float uTip;   // how far the hue shifts toward the tips
+uniform int uMarked[2]; // strands carrying a label right now: drawn red
 out vec3 vCol;
 out vec3 vTan;
 out vec3 vPos;
@@ -268,6 +270,7 @@ void main() {
     return;
   }
 
+  bool marked = i == uMarked[0] || i == uMarked[1];
   vec4 S = texelFetch(uState, ij, 0);
   vec4 look = texelFetch(uLook, ij, 0);
   int k = gl_VertexID >> 1;
@@ -277,7 +280,7 @@ void main() {
   float lean = length(S.xy);
   vec2 bd = lean > 1e-4 ? S.xy / lean : vec2(1.0, 0.0);
   float th0 = atan(lean * 1.6 + 0.25);
-  float seg = look.w / float(SEG);
+  float seg = look.w / float(SEG) * (marked ? ${MARK_LEN.toFixed(2)} : 1.0);
   vec3 T = vec3(0.0, 1.0, 0.0);
   for (int j = 0; j < SEG; j++) {
     float tj = (float(j) + 0.5) / float(SEG);
@@ -296,6 +299,7 @@ void main() {
   vec2 sd = (c1.xy / c1.w - c0.xy / c0.w) * uRes;
   sd = dot(sd, sd) > 1e-8 ? normalize(sd) : vec2(0.0, 1.0);
   float wPx = more.z * pow(1.0 - t, 0.7) * uPxScale / c0.w;
+  if (marked) wPx = max(wPx * 1.8, 3.0);
   float wDraw = max(wPx, 0.9);
   c0.xy += vec2(-sd.y, sd.x) * side * wDraw / uRes * c0.w;
   gl_Position = c0;
@@ -306,6 +310,7 @@ void main() {
   vPos = pos;
   vGlow = more.y;
   vCol = mix(look.rgb, hueShift(look.rgb, uTip) * 1.2 + 0.04, t * t);
+  if (marked) { vCol = vec3(1.0, 0.03, 0.03); vAlpha = 1.0; }
 }`;
 
 const HAIR_FS = `#version 300 es
@@ -388,6 +393,14 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
+// The shader's integer hash, so JS can find strands exactly where the GPU grows them.
+function pcg(v) {
+  const s = (Math.imul(v >>> 0, 747796405) + 2891336453) >>> 0;
+  const w = Math.imul(((s >>> ((s >>> 28) + 4)) ^ s) >>> 0, 277803737) >>> 0;
+  return ((w >>> 22) ^ w) >>> 0;
+}
+const rnd = v => pcg(v >>> 0) / 4294967296;
+
 export class Fur {
   // count: roughly how many strands to grow.
   constructor(ocean, count) {
@@ -413,6 +426,59 @@ export class Fur {
     this.weather = { wind: [0, 0], chop: 0.5, activity: 0.5, gust: [0, 0] };
     this.height = hills; // the ocean places labels on this ground instead of its swell
     this.samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
+    this.marked = [];    // strands carrying a label
+    this.texel = new Float32Array(4);
+  }
+
+  // Where strand i is rooted: the same sums as the shader's rootOf.
+  rootOf(i) {
+    const N = this.N, f = (i + rnd(Math.imul(i, 5) + 11)) / N;
+    const r = f < INNER ? R_IN * Math.sqrt(f / INNER) : R_IN * Math.pow(R_OUT / R_IN, (f - INNER) / (1 - INNER));
+    const a = rnd(Math.imul(i, 5) + 12) * Math.PI * 2;
+    return [r * Math.cos(a), r * Math.sin(a)];
+  }
+
+  // The strand rooted closest to (x, y). Strands at one distance from the middle sit next to
+  // each other in index order at random angles, so a short run of them around the right
+  // index always holds a near neighbour.
+  nearestStrand(x, y) {
+    const r = Math.hypot(x, y);
+    const f = r < R_IN ? INNER * (r / R_IN) ** 2 : INNER + (1 - INNER) * Math.log(r / R_IN) / Math.log(R_OUT / R_IN);
+    const mid = Math.round(Math.min(1, f) * this.N);
+    let best = -1, bd = Infinity;
+    for (let i = Math.max(0, mid - 3000); i < Math.min(this.N, mid + 3000); i++) {
+      const [px, py] = this.rootOf(i), d = (px - x) ** 2 + (py - y) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  // The tip of strand i right now, in the world: its root, walked up joint by joint as the
+  // hair shader does, from that strand's spring state read back from the GPU.
+  tipOf(i) {
+    const gl = this.gl, x = i % this.W, y = Math.floor(i / this.W), px = this.texel;
+    const read = attachment => {
+      gl.readBuffer(gl.COLOR_ATTACHMENT0 + attachment);
+      gl.readPixels(x, y, 1, 1, gl.RGBA, gl.FLOAT, px);
+      return [...px];
+    };
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.fb[this.cur]);
+    const [sx, sy] = read(0), look = read(2), more = read(3);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    const [rx, ry] = this.rootOf(i), frizz = more[0], phase = rnd(Math.imul(i, 3) + 3) * Math.PI * 2;
+    const lean = Math.hypot(sx, sy), bx = lean > 1e-4 ? sx / lean : 1, by = lean > 1e-4 ? sy / lean : 0;
+    const th0 = Math.atan(lean * 1.6 + 0.25), seg = look[3] / SEG * MARK_LEN;
+    const p = [rx, more[3], ry];
+    for (let j = 0; j < SEG; j++) {
+      const tj = (j + 0.5) / SEG;
+      const th = th0 * tj ** 0.8 + 0.3 * frizz * Math.sin(tj * 11 + phase);
+      const az = frizz * 0.8 * Math.sin(tj * 7 + phase * 1.7), c = Math.cos(az), s = Math.sin(az);
+      const hx = c * bx - s * by, hy = s * bx + c * by;
+      p[0] += hx * Math.sin(th) * seg;
+      p[1] += Math.cos(th) * seg;
+      p[2] += hy * Math.sin(th) * seg;
+    }
+    return p;
   }
 
   // A multisampled colour + depth buffer the size of the canvas, and a texture to resolve it into.
@@ -527,6 +593,7 @@ export class Fur {
     gl.uniform3fv(hair.u.uHaze, paletteUniform().haze);
     const pal = paletteUniform();
     gl.uniform1f(hair.u.uTip, pal.tip);
+    gl.uniform1iv(hair.u.uMarked, [this.marked[0] ?? -1, this.marked[1] ?? -1]);
     gl.uniform1f(hair.u.uPunch, pal.punch);
     gl.uniform1f(hair.u.uExposure, pal.exposure);
     gl.uniform1f(hair.u.uRoots, pal.roots);
