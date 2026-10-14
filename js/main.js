@@ -2,7 +2,8 @@ import { CONFIG } from "../config.js";
 import { fetchListens, artistTags } from "./sources.js";
 import { Ocean, BOUNDS } from "./ocean.js";
 import { Fur } from "./fur.js";
-import { Currents, artistHue, hsl } from "./currents.js";
+import { Currents, artistHue } from "./currents.js";
+import { colourOf, cssOf, setPalette, PALETTES } from "./palette.js";
 import { makeDemo, demoTick, DEMO_TAGS } from "./demo.js";
 import { WikiFeed, WIKI_TIMING, wikiTags } from "./wiki.js";
 
@@ -52,8 +53,21 @@ function setView(name) {
 setView(new URLSearchParams(location.search).get("view") === "ocean" ? "ocean" : "fur");
 viewBtn.addEventListener("click", () => setView(ocean.surface ? "ocean" : "fur"));
 
-// What drives the water: live Wikipedia edits (the default), or people's music (?feed=music).
 const params = new URLSearchParams(location.search);
+
+// What it's painted in: artists' pigments led by YInMn Blue (the default), or ?palette=rainbow.
+const PALETTE = params.get("palette") === "rainbow" ? "rainbow" : "pigments";
+setPalette(PALETTE);
+const paletteBtn = document.getElementById("palette");
+paletteBtn.textContent = PALETTES[PALETTE === "rainbow" ? "pigments" : "rainbow"].name;
+paletteBtn.addEventListener("click", () => {
+  const q = new URLSearchParams(location.search);
+  if (PALETTE === "rainbow") q.delete("palette");
+  else q.set("palette", "rainbow");
+  location.search = q.size ? `?${q}` : "";
+});
+
+// What drives the water: live Wikipedia edits (the default), or people's music (?feed=music).
 const FEED = params.get("feed") === "music" || params.has("users") || params.has("demo") ? "music" : "wiki";
 const feedBtn = document.getElementById("feed");
 feedBtn.textContent = FEED === "wiki" ? "Music" : "Wikipedia";
@@ -143,7 +157,7 @@ function styleName(artist, listen) {
 function splash(person, listen) {
   const s = currents.stateFor(person), hue = artistHue(listen.artist);
   currents.surge(person);
-  ocean.ripple(s.x, s.y, hsl(hue, 0.9, 0.65), listen.loved ? 1.5 : 1.1);
+  ocean.ripple(s.x, s.y, colourOf(hue, 0.65, 0.9), listen.loved ? 1.5 : 1.1);
   const detail = FEED === "wiki"
     ? [person.name, listen.track].join(" · ")
     : [styleName(listen.artist, listen), listen.loved ? "♥ loved" : "new track"].filter(Boolean).join(" · ");
@@ -155,7 +169,7 @@ function analyse() {
   if (wiki) shown = people = wiki.people(nowSec());
   for (const bd of currents.analyse(shown, nowSec())) {
     const a = currents.stateFor(bd.a), b = currents.stateFor(bd.b);
-    ocean.ripple((a.x + b.x) / 2, (a.y + b.y) / 2, hsl(bd.hue, 0.9, 0.7), 1.6);
+    ocean.ripple((a.x + b.x) / 2, (a.y + b.y) / 2, colourOf(bd.hue, 0.7, 0.9), 1.6);
     tag({ get x() { return (a.x + b.x) / 2; }, get y() { return (a.y + b.y) / 2; }, spin: a.spin },
       bd.artist, WORDS.bondDetail(bd.artist), bd.hue, true);
   }
@@ -281,8 +295,8 @@ function drawOverlay() {
 
     // The particle: a bright point with a single ping when it lights up.
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = `hsl(${t.hue},90%,88%)`;
-    ctx.shadowColor = `hsl(${t.hue},95%,65%)`;
+    ctx.fillStyle = cssOf(t.hue, 0.88, 0.9);
+    ctx.shadowColor = cssOf(t.hue, 0.65);
     ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
@@ -290,7 +304,7 @@ function drawOverlay() {
     ctx.shadowBlur = 0;
     if (age < 0.8) {
       ctx.globalAlpha = alpha * (1 - age / 0.8);
-      ctx.strokeStyle = `hsl(${t.hue},90%,80%)`;
+      ctx.strokeStyle = cssOf(t.hue, 0.8, 0.9);
       ctx.lineWidth = 0.75;
       ctx.beginPath();
       ctx.arc(sx, sy, 2 + age * 16, 0, Math.PI * 2);
@@ -307,7 +321,7 @@ function drawOverlay() {
     const ex = sx + dir * 14, ey = sy - 14, tx = dir > 0 ? ex + 3 : ex - 3 - width;
     const grow = Math.min(1, age / 0.35);
     ctx.globalAlpha = alpha * 0.6;
-    ctx.strokeStyle = `hsl(${t.hue},60%,85%)`;
+    ctx.strokeStyle = cssOf(t.hue, 0.85, 0.6);
     ctx.lineWidth = 0.6;
     ctx.beginPath();
     ctx.moveTo(sx + dir * 3, sy - 3);
@@ -315,7 +329,7 @@ function drawOverlay() {
     if (grow === 1) ctx.lineTo(ex + dir * (width + 6) * Math.min(1, (age - 0.35) * 4), ey);
     ctx.stroke();
     ctx.globalAlpha = alpha * 0.95;
-    ctx.fillStyle = `hsl(${t.hue},70%,90%)`;
+    ctx.fillStyle = cssOf(t.hue, 0.9, 0.7);
     ctx.fillText(line1, tx, ey - 4);
     ctx.font = `400 7.5px ${MONO}`;
     ctx.globalAlpha = alpha * 0.55;

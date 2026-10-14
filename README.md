@@ -41,7 +41,11 @@ frizzy. A song start sends a wave rolling out through the hair all the way to th
 the fur it passes in its artist's colour, and the trail slowly grows back out to the pelt's own
 drifting rainbow.
 
-The same artist is the same colour for everyone. Now and then a single particle lights up
+**Colour** comes in artists' pigments by default: YInMn Blue leads, with International Klein
+Blue and Cobalt Teal, and Opera Rose, Vermilion, Cadmium Orange and Hansa Yellow as accents.
+The **Rainbow** button (or `?palette=rainbow`) switches to the original full spectrum.
+
+The same artist (or article) is the same colour for everyone. Now and then a single particle lights up
 and names its artist in a tiny tag.
 
 Genres come from Last.fm tags when there's an API key, otherwise from MusicBrainz (no key).
@@ -62,6 +66,7 @@ URL options:
 - `?demo`: music with demo data
 - `?listeners=40`: how many demo listeners (default 100, up to 128)
 - `?view=ocean`: open on the particle ocean instead of the fur
+- `?palette=rainbow`: the original full-spectrum colours instead of the pigments
 - `?hairs=600000`: how many strands to grow (default 420,000, 250,000 on phones)
 - `?users=lb:alice,lfm:bob`: try people without editing any file (`lb` = ListenBrainz, `lfm` = Last.fm)
 
@@ -101,6 +106,7 @@ Only add people who have said yes. A username in this file makes their recent li
 |---|---|
 | `js/ocean.js` | WebGL2 ocean: the listener field, particles, swell, ripples, trails |
 | `js/fur.js` | WebGL2 fur: spring-driven strands grown from the same listener field |
+| `js/palette.js` | The pigment and rainbow palettes everything is coloured with |
 | `js/currents.js` | Listeners as currents: styles, likes, surges, similarity, sync |
 | `js/wiki.js` | Live Wikipedia edits: languages as currents, families as styles |
 | `js/sources.js` | Plays and likes from Last.fm / ListenBrainz, genres from Last.fm / MusicBrainz |

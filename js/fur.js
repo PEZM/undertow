@@ -15,6 +15,7 @@
 // tips, a thin-film shimmer) into a multisampled buffer, so they stay crisp, not noisy.
 
 import { COMMON, NOISE, FULL_VS, MAXR, program } from "./ocean.js";
+import { paletteUniform } from "./palette.js";
 
 const SEG = 7;                  // joints per strand
 const R_IN = 2.4, R_OUT = 18;   // even pelt over the listeners, thinning out to the horizon
@@ -81,6 +82,20 @@ float inside(vec2 p) {
 vec3 hsv(float h, float s, float v) {
   vec3 k = clamp(abs(fract(h + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
   return v * mix(vec3(1.0), k, s);
+}
+
+// The pelt's colour: the rainbow straight from the hue, or the pigment swatch the hue falls
+// on. Swatches meet with only a narrow soft edge, as patches; blending them all the way
+// would mix blue into yellow and turn them muddy.
+uniform vec3 uPal[8];
+uniform int uPalN;
+uniform float uHueShift;
+vec3 swatch(float h, float s, float v) {
+  if (uPalN == 0) return hsv(h, s, v);
+  float x = fract(h) * float(uPalN);
+  int i = int(x);
+  vec3 c = mix(uPal[i], uPal[(i + 1) % uPalN], smoothstep(0.8, 1.0, fract(x)));
+  return mix(vec3(dot(c, vec3(0.3, 0.55, 0.15))), c, s) * v * 1.1;
 }
 `;
 
@@ -195,8 +210,8 @@ void main() {
   }
 
   float marks;
-  float hue = furHue(p, uTime, marks) + (r2 - 0.5) * 0.03;
-  vec3 col = hsv(hue, 0.85 + 0.15 * r0, (0.84 + 0.16 * r1) * mix(0.7, 1.0, smoothstep(-0.5, 0.5, marks)));
+  float hue = furHue(p, uTime, marks) + uHueShift + (r2 - 0.5) * 0.03;
+  vec3 col = swatch(hue, 0.85 + 0.15 * r0, (0.84 + 0.16 * r1) * mix(0.7, 1.0, smoothstep(-0.5, 0.5, marks)));
   // Overlapping currents average toward grey, so push the dye back to full colour.
   float lum = dot(dye, vec3(0.3, 0.55, 0.15));
   vec3 vivid = clamp(lum + (dye - lum) * 2.4, 0.0, 1.0) * 1.1;
@@ -225,6 +240,7 @@ uniform sampler2D uMore;
 uniform mat4 uViewProj;
 uniform vec2 uRes;
 uniform float uPxScale;
+uniform float uTip;   // how far the hue shifts toward the tips
 out vec3 vCol;
 out vec3 vTan;
 out vec3 vPos;
@@ -293,7 +309,7 @@ void main() {
   vTan = T;
   vPos = pos;
   vGlow = more.y;
-  vCol = mix(look.rgb, hueShift(look.rgb, 0.55) * 1.2 + 0.04, t * t);
+  vCol = mix(look.rgb, hueShift(look.rgb, uTip) * 1.2 + 0.04, t * t);
 }`;
 
 const HAIR_FS = `#version 300 es
@@ -301,6 +317,7 @@ precision highp float;
 uniform vec3 uEye;
 uniform vec3 uLight;
 uniform vec3 uHaze;
+uniform float uPunch;  // 1: brighten keeping each colour's hue and saturation (for pigments)
 in vec3 vCol;
 in vec3 vTan;
 in vec3 vPos;
@@ -321,7 +338,11 @@ void main() {
          + film * pow(sh, 12.0) * 0.2 * ao
          + vec3(pow(sh, 90.0) * 0.45 * vT);
   c *= 1.0 + vGlow * vT * 2.2; // a loved song lights the tips
-  c = 1.0 - exp(-c * 1.5);
+  c *= 1.0 + 0.8 * uPunch;  // the pigments are deep; give them more light so they glow
+  vec3 soft = 1.0 - exp(-c * 1.5);
+  float peak = max(max(c.r, c.g), max(c.b, 1e-4));
+  vec3 punchy = c * (1.0 - exp(-peak * 1.5)) / peak;
+  c = mix(soft, punchy, uPunch);
   c = mix(c, uHaze, 1.0 - exp(-max(0.0, length(uEye - vPos) - 2.5) * 0.11));
   o = vec4(c, vAlpha * (1.0 - smoothstep(0.9, 1.0, vT) * 0.6));
 }`;
@@ -348,7 +369,7 @@ void main() {
   if (d.y < 0.0) {
     float t = -uEye.y / d.y, marks;
     vec2 p = uEye.xz + d.xz * t;
-    c = mix(hsv(furHue(p, uTime, marks), 0.7, 0.07), uHaze, 1.0 - exp(-max(0.0, t - 2.5) * 0.11));
+    c = mix(swatch(furHue(p, uTime, marks) + uHueShift, 0.7, 0.07), uHaze, 1.0 - exp(-max(0.0, t - 2.5) * 0.11));
   }
   o = vec4(c, 1.0);
 }`;
@@ -424,6 +445,12 @@ export class Fur {
     this.h = h;
   }
 
+  setPalette(prog, pal) {
+    this.gl.uniform3fv(prog.u.uPal, pal.data);
+    this.gl.uniform1i(prog.u.uPalN, pal.count);
+    this.gl.uniform1f(prog.u.uHueShift, pal.shift);
+  }
+
   // Every strand reads the field and springs toward where the wind and the currents push it.
   grow(dt) {
     const gl = this.gl, o = this.ocean, s = this.progs.strands;
@@ -453,6 +480,8 @@ export class Fur {
     gl.uniform2fv(s.u.uGust, w.gust);
     gl.uniform1f(s.u.uChop, w.chop);
     gl.uniform1f(s.u.uActivity, Math.min(1.5, w.activity));
+    const pal = paletteUniform();
+    this.setPalette(s, pal);
     gl.uniform4fv(s.u.uR, o.R);
     gl.uniform3fv(s.u.uRC, o.RC);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -477,6 +506,7 @@ export class Fur {
     gl.uniform1f(back.u.uTanHalf, o.tanHalf);
     gl.uniform1f(back.u.uAspect, o.aspect);
     gl.uniform3fv(back.u.uHaze, HAZE);
+    this.setPalette(back, paletteUniform());
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     gl.enable(gl.DEPTH_TEST);
@@ -495,6 +525,9 @@ export class Fur {
     gl.uniform3fv(hair.u.uEye, o.eye);
     gl.uniform3fv(hair.u.uLight, LIGHT);
     gl.uniform3fv(hair.u.uHaze, HAZE);
+    const pal = paletteUniform();
+    gl.uniform1f(hair.u.uTip, pal.tip);
+    gl.uniform1f(hair.u.uPunch, pal.punch);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (SEG + 1) * 2, this.N);
     gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     gl.disable(gl.DEPTH_TEST);

@@ -1,3 +1,5 @@
+import { colourOf } from "./palette.js";
+
 // Listeners as currents on the water, driven by what they play. (The same machinery runs
 // any feed: for Wikipedia, each language is a current and its edits are its "plays".)
 //
@@ -46,15 +48,6 @@ export function artistHue(name) {
   let h = 2166136261;
   for (const c of artistKey(name)) h = Math.imul(h ^ c.codePointAt(0), 16777619);
   return (h >>> 0) % 360;
-}
-
-export function hsl(h, s, l) {
-  const a = s * Math.min(l, 1 - l);
-  const f = n => {
-    const k = (n + h / 30) % 12;
-    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-  };
-  return [f(0), f(8), f(4)];
 }
 
 function cosine(a, b) {
@@ -222,7 +215,7 @@ export class Currents {
           pick = s.palette.find(a => (r -= a.w) <= 0) ?? s.palette[0] ?? null;
         }
         s.colourArtist = pick?.artist ?? null;
-        s.targetRgb = pick ? hsl(artistHue(pick.artist), 0.95, 0.56) : [...QUIET];
+        s.targetRgb = pick ? colourOf(artistHue(pick.artist)) : [...QUIET];
         s.nextColourAt = t + 4 + Math.random() * 4;
       }
       for (let c = 0; c < 3; c++) s.rgb[c] += (s.targetRgb[c] - s.rgb[c]) * Math.min(1, dt * 0.6);
