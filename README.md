@@ -17,10 +17,11 @@ the currents are driven by the music:
 - **In sync:** two people on the same artist within the last 12 minutes meet and orbit.
 
 **Fur** (the button top right, or `?view=fur`) grows the same data as an endless, extremely
-colourful pelt of several hundred thousand hairs running out to the horizon. Gusts roll through
-it in long waves. Each listener combs a whorl into it like a cowlick, and their listening energy makes
+colourful pelt of several hundred thousand hairs running out to the horizon. The whole pelt
+has one weather: everyone's styles together decide which way it is combed and how bristly it is,
+and the more people are listening the harder the gusts roll across it. Each listener combs a whorl into it like a cowlick, and their listening energy makes
 the fur stand up in a tuft. Calm styles lay it long and sleek, energetic ones make it short and
-frizzy. A song start sends a wave through the hair, and a loved track lights the tips. Every current dyes
+frizzy. A song start sends a wave rolling out through the hair all the way to the horizon, and a loved track lights the tips. Every current dyes
 the fur it passes in its artist's colour, and the trail slowly grows back out to the pelt's own
 drifting rainbow.
 

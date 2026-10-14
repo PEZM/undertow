@@ -8,7 +8,7 @@
 
 export const BOUNDS = { x: 2.8, y: 2.4 }; // world half-extents of the water
 export const MAXL = 128; // listeners
-const MAXR = 16;          // ripples alive at once
+export const MAXR = 16;          // ripples alive at once
 const FIELD = 256;        // field texture resolution
 const OCEAN = [0.05, 0.13, 0.27];
 
@@ -339,6 +339,7 @@ export class Ocean {
     this.R = new Float32Array(MAXR * 4);
     this.RC = new Float32Array(MAXR * 3);
     this.count = 0;
+    this.mood = { wind: [0, 0], chop: 0.5, activity: 0 };
     this.nextRipple = 0;
     this.vao = gl.createVertexArray();
     this.progs = {
@@ -429,7 +430,7 @@ export class Ocean {
 
   // World (x, y on the water) to screen pixels.
   project(x, y, lift = 0) {
-    const v = [x, swell(x, y, this.time) + lift, y, 1], m = this.vp, c = [0, 0, 0, 0];
+    const v = [x, (this.surface?.height ?? swell)(x, y, this.time) + lift, y, 1], m = this.vp, c = [0, 0, 0, 0];
     for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) c[r] += m[k * 4 + r] * v[k];
     if (c[3] <= 0) return null;
     const nx = c[0] / c[3], ny = c[1] / c[3];
@@ -457,6 +458,16 @@ export class Ocean {
       d.set([...l.rgb, l.loved], (MAXL + i) * 4);
       d.set([l.drift[0], l.drift[1], l.chop, l.surge], (2 * MAXL + i) * 4);
     }
+    // Everyone at once: the energy-weighted pull of all their styles, how choppy, how busy.
+    let e = 0, wx = 0, wy = 0, chop = 0;
+    for (let i = 0; i < this.count; i++) {
+      const l = list[i], w = l.energy + l.surge;
+      e += w;
+      wx += l.drift[0] * w;
+      wy += l.drift[1] * w;
+      chop += l.chop * w;
+    }
+    this.mood = e ? { wind: [wx / e, wy / e], chop: chop / e, activity: e / this.count } : { wind: [0, 0], chop: 0.5, activity: 0 };
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.listeners);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, MAXL, 3, gl.RGBA, gl.FLOAT, d);

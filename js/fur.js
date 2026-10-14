@@ -14,7 +14,7 @@
 // Strands are drawn as tapered ribbons with hair lighting (Kajiya-Kay sheen, back-lit
 // tips, a thin-film shimmer) into a multisampled buffer, so they stay crisp, not noisy.
 
-import { COMMON, NOISE, FULL_VS, program } from "./ocean.js";
+import { COMMON, NOISE, FULL_VS, MAXR, program } from "./ocean.js";
 
 const SEG = 7;                  // joints per strand
 const R_IN = 2.4, R_OUT = 18;   // even pelt over the listeners, thinning out to the horizon
@@ -22,6 +22,29 @@ const INNER = 1 / (1 + 2 * Math.log(R_OUT / R_IN)); // share of strands in the e
 const HAZE = [0.1, 0.045, 0.14];
 const LIGHT = (v => v.map(x => x / Math.hypot(...v)))([0.25, 0.55, 1.0]);
 const f = x => x.toFixed(6);
+
+// The ground under the fur: long, slow, warped swells rolling across it, smooth to the horizon.
+// The same formula runs in JS so labels sit on the pelt.
+const HILLS = [
+  [0.12, [0.8, 0.6], 0.55, [-0.6, 0.8], 0.37, 1.3, 0.05, 0.22],
+  [0.07, [-0.45, 0.89], 0.9, [0.95, 0.31], 0.61, 1.1, -0.04, 0.3],
+  [0.03, [0.99, -0.14], 1.45, [0.2, 0.98], 1.1, 0.9, 0.07, 0.4],
+];
+export function hills(x, y, t) {
+  let h = 0;
+  for (const [amp, d, k, w, kw, warp, ws, speed] of HILLS) {
+    h += amp * Math.sin((x * d[0] + y * d[1]) * k + warp * Math.sin((x * w[0] + y * w[1]) * kw + t * ws) - t * speed);
+  }
+  return h;
+}
+const HILLS_GLSL = `
+float hills(vec2 p, float t) {
+  float h = 0.0;
+${HILLS.map(([amp, d, k, w, kw, warp, ws, speed]) =>
+  `  h += ${f(amp)} * sin(dot(p, vec2(${f(d[0])}, ${f(d[1])})) * ${f(k)} + ${f(warp)} * sin(dot(p, vec2(${f(w[0])}, ${f(w[1])})) * ${f(kw)} + t * ${f(ws)}) - t * ${f(speed)});`).join("\n")}
+  return h;
+}
+`;
 
 const furCommon = N => `
 const float R_IN = ${f(R_IN)};
@@ -38,21 +61,21 @@ uint pcg(uint v) {
 }
 float rnd(uint v) { return float(pcg(v)) / 4294967296.0; }
 
-// Strand i's root on the water and the spacing between it and its neighbours.
-// Density is even inside R_IN and falls off as 1/r^2 beyond, roughly as fast as
-// perspective shrinks it, so the pelt looks equally thick all the way out.
+// Strand i's root and the spacing between it and its neighbours. Density is even inside
+// R_IN and falls off as 1/r^2 beyond, roughly as fast as perspective shrinks it, so the
+// pelt looks equally thick all the way out. Strands are scattered at random within each
+// thin ring, so there is no lattice or spiral to spot.
 vec2 rootOf(int i, out float sp) {
   uint u = uint(i);
-  float f = (float(i) + 0.5) / NSTRANDS;
+  float f = (float(i) + rnd(u * 5u + 11u)) / NSTRANDS;
   float r = f < INNER ? R_IN * sqrt(f / INNER) : R_IN * pow(R_OUT / R_IN, (f - INNER) / (1.0 - INNER));
   sp = SP0 * max(1.0, r / R_IN);
-  float a = float(u * 2654435769u) * (6.2831853 / 4294967296.0); // golden angle, exactly
-  vec2 j = vec2(rnd(u * 5u + 11u), rnd(u * 5u + 12u)) - 0.5;
-  return r * vec2(cos(a), sin(a)) + j * sp * 0.8;
+  float a = rnd(u * 5u + 12u) * 6.2831853;
+  return r * vec2(cos(a), sin(a));
 }
 
 float inside(vec2 p) {
-  return smoothstep(0.0, 0.4, uBounds.x - abs(p.x)) * smoothstep(0.0, 0.4, uBounds.y - abs(p.y));
+  return smoothstep(0.0, 0.7, uBounds.x - abs(p.x)) * smoothstep(0.0, 0.7, uBounds.y - abs(p.y));
 }
 
 vec3 hsv(float h, float s, float v) {
@@ -61,14 +84,14 @@ vec3 hsv(float h, float s, float v) {
 }
 `;
 
-// The pelt's own colouring: marbled, slowly drifting bands across the whole spectrum.
+// The pelt's own colouring: broad, softly marbled regions drifting across the whole spectrum.
 const HUE = `
 float furHue(vec2 p, float t, out float marks) {
-  vec2 q = p * 0.45;
-  vec2 w = vec2(snoise(vec3(q, t * 0.015)), snoise(vec3(q + 5.2, t * 0.015 + 1.3)));
-  float n = snoise(vec3(q * 1.4 + w * 0.9, t * 0.025 + 3.0));
-  marks = snoise(vec3(q * 3.2 + w * 1.6, t * 0.03 + 9.0));
-  return n * 0.6 + marks * 0.1 + t * 0.004 + 0.75;
+  vec2 q = p * 0.28;
+  vec2 w = vec2(snoise(vec3(q, t * 0.012)), snoise(vec3(q + 5.2, t * 0.012 + 1.3)));
+  float n = snoise(vec3(q * 1.2 + w * 0.7, t * 0.02 + 3.0));
+  marks = snoise(vec3(q * 2.0 + w * 1.2, t * 0.025 + 9.0));
+  return n * 0.5 + marks * 0.06 + t * 0.004 + 0.75;
 }
 `;
 
@@ -77,24 +100,22 @@ ${COMMON}
 ${NOISE}
 ${furCommon(N)}
 ${HUE}
+${HILLS_GLSL}
 uniform sampler2D uState;  // lean xy, lean velocity xy
 uniform sampler2D uDye;    // dye rgb, amount
 uniform sampler2D uFlow;
 uniform sampler2D uPaint;
 uniform sampler2D uMood;
 uniform float uDt;
+uniform vec2 uWind;       // everyone's styles together: which way the whole pelt is combed
+uniform float uChop;      // ... how bristly it is
+uniform float uActivity;  // ... and how hard the wind blows
+uniform vec4 uR[${MAXR}];         // song starts: xy, birth time, strength
+uniform vec3 uRC[${MAXR}];
 layout(location = 0) out vec4 oState;
 layout(location = 1) out vec4 oDye;
 layout(location = 2) out vec4 oLook;  // colour, length
-layout(location = 3) out vec4 oMore;  // frizz, glow, width, phase
-
-vec2 swellSlope(vec2 p, float t) {
-  return 0.187 * cos(dot(p, vec2(0.9, 0.45)) * 2.2 - t * 0.5) * vec2(0.9, 0.45)
-       + 0.195 * cos(dot(p, vec2(-0.35, 1.0)) * 3.9 - t * 0.7) * vec2(-0.35, 1.0)
-       + 0.175 * cos(dot(p, vec2(0.7, -0.75)) * 7.3 - t * 1.1) * vec2(0.7, -0.75)
-       + 0.143 * cos(dot(p, vec2(-0.95, -0.2)) * 13.0 - t * 1.6) * vec2(-0.95, -0.2)
-       + 0.115 * cos(dot(p, vec2(0.2, 0.98)) * 23.0 - t * 2.3) * vec2(0.2, 0.98);
-}
+layout(location = 3) out vec4 oMore;  // frizz, glow, width, ground height
 
 void main() {
   ivec2 ij = ivec2(gl_FragCoord.xy);
@@ -111,19 +132,39 @@ void main() {
   vec4 flow = texture(uFlow, uv);
   vec4 paint = texture(uPaint, uv);
   vec2 mood = texture(uMood, uv).xy;
-  float chop = mix(0.4, mood.x, in_);
+  float chop = mix(uChop, mood.x, in_);
   float glow = min(mood.y, 1.0) * in_;
   float lift = flow.w * in_;   // listening energy: the fur stands up
 
-  // Wind over the pelt: gusts rolling across it in long waves, a curl-noise breeze,
-  // the swell's slope, and the listeners' own currents combing whorls into it.
-  vec2 dir = vec2(0.871, 0.49);
-  float gust = snoise(vec3(dot(p, dir) * 0.9 - uTime * 0.55, dot(p, vec2(-dir.y, dir.x)) * 0.35, uTime * 0.05));
-  vec2 wind = dir * (0.2 + 0.45 * gust)
-            + curl(vec3(p * 0.5, uTime * 0.04)) * 0.1
-            - swellSlope(p, uTime) * 0.8
+  // Song starts roll out as waves across the whole pelt, all the way to the horizon,
+  // pushing the hair over, lifting it, and leaving a faint wash of the artist's colour.
+  vec2 push = vec2(0.0);
+  vec3 washC = vec3(0.0);
+  float wash = 0.0;
+  for (int j = 0; j < ${MAXR}; j++) {
+    vec4 R = uR[j];
+    float age = uTime - R.z;
+    if (R.w <= 0.0 || age < 0.0 || age > 30.0) continue;
+    vec2 d = p - R.xy;
+    float dist = length(d) + 1e-3;
+    float front = dist - age * 0.7;
+    float b = exp(-front * front * 6.0) * R.w * (1.0 - age / 30.0) * (0.35 + 0.65 / (1.0 + dist * 0.5));
+    push += d / dist * b;
+    lift += b * 0.35;
+    washC += uRC[j] * b;
+    wash += b;
+  }
+
+  // Wind over the pelt: gusts rolling across it in long waves, combed the way everyone's
+  // styles pull together and blowing harder the more people are listening, a curl-noise
+  // breeze, the song-start waves, and the listeners' own currents combing whorls into it.
+  vec2 dir = normalize(vec2(0.871, 0.49) * 0.3 + uWind + 1e-4);
+  float gust = snoise(vec3(dot(p, dir) * 0.6 - uTime * (0.35 + 0.3 * uActivity), dot(p, vec2(-dir.y, dir.x)) * 0.25, uTime * 0.04));
+  vec2 wind = dir * (0.12 + 0.5 * length(uWind) + (0.25 + 0.45 * uActivity) * gust)
+            + curl(vec3(p * 0.35, uTime * 0.03)) * 0.06
+            + push * 1.2
             + flow.xy * in_ * 5.0
-            + (vec2(r0, r1) - 0.5) * 0.3;
+            + (vec2(r0, r1) - 0.5) * 0.2;
   wind *= 1.0 - 0.65 * min(lift, 1.0);
   float m = length(wind);
   if (m > 1.4) wind *= 1.4 / m;
@@ -137,10 +178,14 @@ void main() {
   float take = clamp(paint.a * in_ * 1.4, 0.0, 1.0);
   vec3 dye = D.a < 0.02 ? paint.rgb : mix(D.rgb, paint.rgb, clamp(take * uDt * 3.0, 0.0, 1.0));
   float amount = max(D.a * exp(-uDt / 35.0), take);
+  if (wash > 0.01) {
+    dye = mix(dye, washC / wash, clamp(wash * uDt * 4.0, 0.0, 1.0));
+    amount = max(amount, min(wash, 1.0) * 0.45);
+  }
 
   float marks;
-  float hue = furHue(p, uTime, marks) + (r2 - 0.5) * 0.07;
-  vec3 col = hsv(hue, 0.75 + 0.25 * r0, (0.62 + 0.38 * r1) * mix(0.5, 1.0, smoothstep(-0.35, 0.25, marks)));
+  float hue = furHue(p, uTime, marks) + (r2 - 0.5) * 0.03;
+  vec3 col = hsv(hue, 0.85 + 0.15 * r0, (0.84 + 0.16 * r1) * mix(0.7, 1.0, smoothstep(-0.5, 0.5, marks)));
   // Overlapping currents average toward grey, so push the dye back to full colour.
   float lum = dot(dye, vec3(0.3, 0.55, 0.15));
   vec3 vivid = clamp(lum + (dye - lum) * 2.4, 0.0, 1.0) * 1.1;
@@ -152,7 +197,9 @@ void main() {
   oState = vec4(lean, vel);
   oDye = vec4(dye, amount);
   oLook = vec4(col, len);
-  oMore = vec4(chop * chop * 1.5 + 0.12, glow, sp * min(1.0, 0.0125 / SP0) * mix(0.45, 0.8, r0), r2 * 6.2831);
+  // The ground: rolling hills, plus the listeners' mounds and ripples from the field.
+  float ground = hills(p, uTime) + (flow.z - swell(p, uTime)) * in_;
+  oMore = vec4(chop * chop * 1.5 + 0.12, glow, sp * min(1.0, 0.0125 / SP0) * mix(0.45, 0.8, r0), ground);
 }`;
 
 const HAIR_VS = N => `#version 300 es
@@ -161,7 +208,6 @@ ${furCommon(N)}
 uniform sampler2D uState;
 uniform sampler2D uLook;
 uniform sampler2D uMore;
-uniform sampler2D uFlow;
 uniform mat4 uViewProj;
 uniform vec2 uRes;
 uniform float uPxScale;
@@ -185,8 +231,9 @@ void main() {
   ivec2 ij = ivec2(i % uW, i / uW);
   float sp;
   vec2 p = rootOf(i, sp);
-  float h = mix(swell(p, uTime), texture(uFlow, fuv(p)).z, inside(p));
-  vec3 pos = vec3(p.x, h, p.y);
+  vec4 more = texelFetch(uMore, ij, 0);
+  float phase = rnd(uint(i) * 3u + 3u) * 6.2831;
+  vec3 pos = vec3(p.x, more.w, p.y);
 
   vec4 root = uViewProj * vec4(pos, 1.0);
   float m = 1.3 * root.w + 0.3;
@@ -197,7 +244,6 @@ void main() {
 
   vec4 S = texelFetch(uState, ij, 0);
   vec4 look = texelFetch(uLook, ij, 0);
-  vec4 more = texelFetch(uMore, ij, 0);
   int k = gl_VertexID >> 1;
   float side = float(gl_VertexID & 1) * 2.0 - 1.0;
 
@@ -209,8 +255,8 @@ void main() {
   vec3 T = vec3(0.0, 1.0, 0.0);
   for (int j = 0; j < SEG; j++) {
     float tj = (float(j) + 0.5) / float(SEG);
-    float th = th0 * pow(tj, 0.8) + 0.3 * more.x * sin(tj * 11.0 + more.w);
-    float az = more.x * 0.8 * sin(tj * 7.0 + more.w * 1.7);
+    float th = th0 * pow(tj, 0.8) + 0.3 * more.x * sin(tj * 11.0 + phase);
+    float az = more.x * 0.8 * sin(tj * 7.0 + phase * 1.7);
     vec2 hd = mat2(cos(az), sin(az), -sin(az), cos(az)) * bd;
     vec3 d = vec3(hd.x * sin(th), cos(th), hd.y * sin(th));
     if (j < k) pos += d * seg;
@@ -330,6 +376,8 @@ export class Fur {
     this.more = tex();
     this.fb = [0, 1].map(i => ocean.framebuffer(this.state[i], this.dye[i], this.look, this.more));
     this.cur = 0;
+    this.weather = { wind: [0, 0], chop: 0.5, activity: 0.5 };
+    this.height = hills; // the ocean places labels on this ground instead of its swell
     this.samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
   }
 
@@ -376,6 +424,16 @@ export class Fur {
     o.bind(s, "uFlow", 2, o.fields[0]);
     o.bind(s, "uPaint", 3, o.fields[1]);
     o.bind(s, "uMood", 4, o.fields[2]);
+    // The collective weather eases toward everyone's current mood over half a minute or so.
+    const w = this.weather, m = o.mood, k = 1 - Math.exp(-dt / 8);
+    w.wind = w.wind.map((v, i) => v + (m.wind[i] - v) * k);
+    w.chop += (m.chop - w.chop) * k;
+    w.activity += (m.activity - w.activity) * k;
+    gl.uniform2fv(s.u.uWind, w.wind);
+    gl.uniform1f(s.u.uChop, w.chop);
+    gl.uniform1f(s.u.uActivity, Math.min(1.5, w.activity));
+    gl.uniform4fv(s.u.uR, o.R);
+    gl.uniform3fv(s.u.uRC, o.RC);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.cur = 1 - this.cur;
   }
@@ -410,7 +468,6 @@ export class Fur {
     o.bind(hair, "uState", 0, this.state[this.cur]);
     o.bind(hair, "uLook", 1, this.look);
     o.bind(hair, "uMore", 2, this.more);
-    o.bind(hair, "uFlow", 3, o.fields[0]);
     gl.uniformMatrix4fv(hair.u.uViewProj, false, o.vp);
     gl.uniform2f(hair.u.uRes, this.w, this.h);
     gl.uniform1f(hair.u.uPxScale, 0.5 * this.h / o.tanHalf);
