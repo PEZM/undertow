@@ -295,7 +295,8 @@ function drawOverlay() {
   for (const t of tags) {
     const age = ocean.time - t.born;
     let pr;
-    if (pelt && t.strand >= 0) {
+    const onHair = !!pelt && t.strand >= 0;
+    if (onHair) {
       pr = ocean.projectPoint(...pelt.tipOf(t.strand)); // hanging from the tip of its red hair
     } else {
       // The tagged particle circles in its current like any other.
@@ -306,22 +307,25 @@ function drawOverlay() {
     const alpha = Math.min(1, (TAG_LIFE - age) / 1.2);
     const { sx, sy } = pr;
 
-    // The particle: a bright point with a single ping when it lights up.
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = cssOf(t.hue, 0.88, 0.9);
-    ctx.shadowColor = cssOf(t.hue, 0.65);
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    if (age < 0.8) {
-      ctx.globalAlpha = alpha * (1 - age / 0.8);
-      ctx.strokeStyle = cssOf(t.hue, 0.8, 0.9);
-      ctx.lineWidth = 0.75;
+    // The particle: a bright point with a single ping when it lights up. (On a hair, the red
+    // hair itself is the point.)
+    if (!onHair) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = cssOf(t.hue, 0.88, 0.9);
+      ctx.shadowColor = cssOf(t.hue, 0.65);
+      ctx.shadowBlur = 8;
       ctx.beginPath();
-      ctx.arc(sx, sy, 2 + age * 16, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      if (age < 0.8) {
+        ctx.globalAlpha = alpha * (1 - age / 0.8);
+        ctx.strokeStyle = cssOf(t.hue, 0.8, 0.9);
+        ctx.lineWidth = 0.75;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2 + age * 16, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
     // A hairline callout, typed out character by character.
@@ -331,15 +335,23 @@ function drawOverlay() {
     if ("letterSpacing" in ctx) ctx.letterSpacing = "1.2px";
     const width = Math.max(ctx.measureText(t.artist).width, 40);
     const dir = sx + 18 + width > w - 12 ? -1 : 1;
-    const ex = sx + dir * 14, ey = sy - 14, tx = dir > 0 ? ex + 3 : ex - 3 - width;
-    const grow = Math.min(1, age / 0.35);
+    // On a hair the underline starts right at its tip and runs sideways, so nothing extends
+    // the hair; elsewhere a short diagonal leads up from the point first.
+    const lead = onHair ? 0 : 14;
+    const ex = sx + dir * lead, ey = sy - lead, tx = dir > 0 ? ex + 3 : ex - 3 - width;
+    const grow = onHair ? 1 : Math.min(1, age / 0.35);
     ctx.globalAlpha = alpha * 0.6;
     ctx.strokeStyle = cssOf(t.hue, 0.85, 0.6);
     ctx.lineWidth = 0.6;
     ctx.beginPath();
-    ctx.moveTo(sx + dir * 3, sy - 3);
-    ctx.lineTo(sx + dir * (3 + 11 * grow), sy - 3 - 11 * grow);
-    if (grow === 1) ctx.lineTo(ex + dir * (width + 6) * Math.min(1, (age - 0.35) * 4), ey);
+    if (onHair) {
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + dir * (width + 6) * Math.min(1, age * 4), sy);
+    } else {
+      ctx.moveTo(sx + dir * 3, sy - 3);
+      ctx.lineTo(sx + dir * (3 + 11 * grow), sy - 3 - 11 * grow);
+      if (grow === 1) ctx.lineTo(ex + dir * (width + 6) * Math.min(1, (age - 0.35) * 4), ey);
+    }
     ctx.stroke();
     ctx.globalAlpha = alpha * 0.95;
     ctx.fillStyle = cssOf(t.hue, 0.9, 0.7);
