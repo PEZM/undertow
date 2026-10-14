@@ -148,10 +148,11 @@ void main() {
 
   float len = mix(0.07, 0.11, r1) * mix(1.3, 0.72, chop) * (1.0 + 1.1 * lift + 0.5 * glow);
   len = max(len, sp * 3.0);
+  // With fewer strands (phones) they stay as fine as on a big screen, just a little sparser.
   oState = vec4(lean, vel);
   oDye = vec4(dye, amount);
   oLook = vec4(col, len);
-  oMore = vec4(chop * chop * 1.5 + 0.12, glow, sp * mix(0.45, 0.8, r0), r2 * 6.2831);
+  oMore = vec4(chop * chop * 1.5 + 0.12, glow, sp * min(1.0, 0.0125 / SP0) * mix(0.45, 0.8, r0), r2 * 6.2831);
 }`;
 
 const HAIR_VS = N => `#version 300 es
@@ -314,7 +315,7 @@ export class Fur {
     this.ocean = ocean;
     this.gl = gl;
     const small = Math.min(innerWidth, innerHeight) < 600;
-    this.W = Math.round(Math.sqrt(Math.max(4096, Math.min(1.5e6, count || (small ? 150000 : 420000)))));
+    this.W = Math.round(Math.sqrt(Math.max(4096, Math.min(1.5e6, count || (small ? 250000 : 420000)))));
     this.N = this.W * this.W;
     this.progs = {
       strands: program(gl, FULL_VS, STRAND_FS(this.N)),

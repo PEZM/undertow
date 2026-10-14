@@ -44,7 +44,7 @@ URL options:
 - `?demo`: force demo data
 - `?listeners=40`: how many demo listeners (default 100, up to 128)
 - `?view=fur`: open on the fur
-- `?hairs=600000`: how many strands to grow (default 420,000, 150,000 on phones)
+- `?hairs=600000`: how many strands to grow (default 420,000, 250,000 on phones)
 - `?users=lb:alice,lfm:bob`: try people without editing any file (`lb` = ListenBrainz, `lfm` = Last.fm)
 
 Drag to orbit, scroll to zoom (closer in the fur), tap the water to ripple it. Hover a current to see whose it is, what they're
