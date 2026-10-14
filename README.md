@@ -45,10 +45,6 @@ drifting rainbow.
 and scarlet to pale rose on the highlights; every artist or article is a shade of it. The
 **Rainbow** button (or `?palette=rainbow`) switches to the original full spectrum.
 
-**The undertow:** under the fur the ground is a slow tide of heaving, folding relief that drifts
-across the whole pelt. The hair grows out of its slopes and is dragged downhill with it, crests
-catch the light and creases fall into shadow, so everything on the surface rides it.
-
 The same artist (or article) is the same colour for everyone. Now and then a single particle lights up
 and names its artist in a tiny tag.
 
@@ -111,7 +107,6 @@ Only add people who have said yes. A username in this file makes their recent li
 | `js/ocean.js` | WebGL2 ocean: the listener field, particles, swell, ripples, trails |
 | `js/fur.js` | WebGL2 fur: spring-driven strands grown from the same listener field |
 | `js/palette.js` | The red and rainbow palettes everything is coloured with |
-| `js/tide.js` | The undertow: the fur's moving ground, identical on the GPU and in JS |
 | `js/currents.js` | Listeners as currents: styles, likes, surges, similarity, sync |
 | `js/wiki.js` | Live Wikipedia edits: languages as currents, families as styles |
 | `js/sources.js` | Plays and likes from Last.fm / ListenBrainz, genres from Last.fm / MusicBrainz |
